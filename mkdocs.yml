@@ -1,0 +1,68 @@
+# Project information
+site_name: Airflow provider package for Microsoft Graph SDK
+site_description: Airflow provider package for Microsoft Graph SDK.
+
+# Copyright
+copyright: Copyright &copy; Infrabel
+
+# Configuration
+theme:
+  name: 'material'
+  icon:
+    logo: 'simple/python'
+    repo: 'simple/gitlab'
+  palette:
+    - scheme: 'default'
+      media: '(prefers-color-scheme: light)'
+      toggle:
+        icon: 'material/lightbulb'
+        name: "Switch to dark mode"
+    - scheme: 'slate'
+      media: '(prefers-color-scheme: dark)'
+      primary: 'blue'
+      toggle:
+        icon: 'material/lightbulb-outline'
+        name: 'Switch to light mode'
+  features:
+      - navigation.sections
+      - navigation.top
+      - toc.follow
+
+# Page tree
+nav:
+  - Introduction: 'index.md'
+  - Usage:
+    - Quickstart: ''
+    - Advanced Usage: ''
+  - API Reference:
+    - Developer Interface: ''
+    - Exceptions: ''
+
+# Customization
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - attr_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.snippets:
+      check_paths: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - codehilite
+  - mkautodoc
+
+plugins:
+  - search
+  - autorefs
+  - git-revision-date-localized
+
+extra:
+  social:
+    - icon: simple/gitlab
+      link: https://git.infrabel.be/business-intelligence/airflow/providers/airflow-infrabel-msgraph-sdk-provider
+    - icon: material/email
+      link: mailto:bienduserreporting@infrabel.be

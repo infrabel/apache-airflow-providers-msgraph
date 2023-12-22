@@ -1,0 +1,246 @@
+image: artifactory.msnet.railb.be/a1840-bi-pm-docker/cicd:latest
+
+before_script:
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - ssh -o "StrictHostKeyChecking=no" git@git.infrabel.be
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - git config --global user.email "BIEndUserReporting@infrabel.be"
+    - git config --global user.name "BI DevOps"
+    - git config --global pull.ff only
+
+
+variables:
+  PIP_CACHE_DIR: "${CI_PROJECT_DIR}/.cache/pip"
+  DOCKER_DRIVER: overlay2
+
+stages:
+  - Integrity
+  - Versioning
+  - Build
+  - Delivery
+  - Publish
+
+
+# --// Templates ------------------
+
+.install-deps-template: &install-deps
+  before_script:
+    - export no_proxy="artifactory.msnet.railb.be"
+    - export REQUESTS_CA_BUNDLE="/etc/pki/tls/certs/ca-bundle.crt"
+    - mkdir -p reports
+    - poetry lock --no-update
+    - poetry install -vv
+
+
+.integrity-template: &integrity
+  <<: *install-deps
+  stage: Integrity
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .cache/pip
+      - .venv
+      - reports
+    policy: pull
+
+
+# --// Integrity Jobs: Quality ------------
+
+install-deps:
+  <<: *install-deps
+  stage: Integrity
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .cache/pip
+      - .venv
+      - reports
+  script:
+    - poetry --version
+    - poetry env info
+
+check-flake8:
+  <<: *integrity
+  script: poetry run pflake8 --ignore=E501 airflow/providers/microsoft/msgraph
+
+check-mypy:
+  <<: *integrity
+  script:
+    - >
+      cd airflow/providers/microsoft
+      
+      poetry run mypy --config-file=../../../mypy.ini msgraph --namespace-packages
+
+check-black:
+  <<: *integrity
+  script: poetry run black airflow/providers/microsoft/msgraph --check --diff --color
+
+check-pylint:
+  <<: *integrity
+  script:
+    - >
+        poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
+                          -r n \
+                          --msg-template="{path}':'{line}':' [{msg_id}({symbol}), {obj}] {msg}" | tee reports/pylint.txt
+  artifacts:
+    paths:
+      - reports/pylint.txt
+    expire_in: 1 hour
+    when: always
+
+# --// Integrity Jobs: Tests ------------
+
+check-pytest:
+  <<: *integrity
+  rules:
+    - exists:
+      - tests/unit/**/*.py
+  script:
+    - >
+      mkdir -p logs reports
+
+      poetry run nose2 --start-dir tests/unit --junit-xml --with-coverage --verbose
+
+      mv xunit-result.xml reports/xunit-result.xml
+
+      mv coverage.xml reports/coverage.xml
+  coverage: '/^TOTAL.+?(\d+\%)$/'
+  artifacts:
+    paths:
+      - reports/coverage.xml
+      - reports/xunit-result.xml
+    expire_in: 1 hour
+    when: always
+
+check-pytest-integration:
+  <<: *integrity
+  rules:
+    - exists:
+      - tests/integration/**/*.py
+  script:
+    - >
+      mkdir -p logs reports
+
+      poetry run nose2 --start-dir tests/integration --junit-xml --with-coverage --verbose
+
+      mv xunit-result.xml reports/integration-xunit-result.xml
+
+      mv coverage.xml reports/integration-coverage.xml
+  timeout: 15 minutes
+  coverage: '/^TOTAL.+?(\d+\%)$/'
+  artifacts:
+    paths:
+      - reports/integration-coverage.xml
+      - reports/integration-xunit-result.xml
+    expire_in: 1 hour
+    when: always
+
+check-mutatest:
+  <<: *integrity
+  rules:
+    - if: '$CI_COMMIT_BRANCH !~ /^(feature|fix)\/([a-zA-Z0-9_-])+$/'
+      exists:
+      - tests/unit/**/*.py
+  allow_failure: true
+  timeout: 15m
+  script:
+    - >
+      mut.py --target airflow/providers/microsoft/msgraph/*.py --unit-test tests/unit \
+                                                         --coverage -m \
+                                                         --report=reports/mutation.yml \
+                                                         --report-html=reports \
+                                                         --timeout-factor=1
+  artifacts:
+    paths:
+      - reports/index.html
+      - reports/mutation.yml
+      - reports/mutants/*
+    expire_in: 1 hour
+    when: always
+
+bumpversion:
+  stage: Versioning
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+  variables:
+    PART: minor
+  script:
+    - >
+
+      bump2version --verbose $PART --commit --message 'ci: [{now:%Y-%m-%d}] CI Build - bumping version {new_version}'
+
+      git push git@$CI_SERVER_HOST:$CI_PROJECT_PATH.git HEAD:$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME -o ci.skip
+
+      echo 'VERSION='`cat VERSION` > version.env
+
+      echo 'PART=$PART' >> version.env
+
+
+# --// Deliver Jobs: Package ------------
+
+build-package:
+  <<: *install-deps
+  stage: Delivery
+  rules:
+  - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    when: manual
+  artifacts:
+    paths: ['dist']
+  script:
+    - poetry config repositories.artifactory https://artifactory.msnet.railb.be/artifactory/api/pypi/a1840-bi-pm-pypi
+    - poetry build
+    - poetry publish -vvv -r artifactory -u $ARTIFACTORY_PUSH_USER -p $ARTIFACTORY_PUSH_PASSWORD
+
+
+
+# --// Publish Jobs: Gitlab Pages ------------
+
+publish-docs:
+  <<: *install-deps
+  stage: Publish
+  variables:
+    S3_ENDPOINT: "http://minio-api-a1840-bi-pm.apps.ocp.infrabel.be"
+    S3_BUCKET: "docs"
+    GIT_DEPTH: 0
+  script:
+    - >
+      
+      mkdocs build --site-dir public
+      
+      aws configure set aws_access_key_id "$S3_ACCESS_KEY" \
+          && aws configure set aws_secret_access_key "$S3_SECRET_KEY" \
+          && aws configure set region "us-east-1" \
+          && aws configure set default.s3.signature_version s3v4
+      
+      aws s3 rm s3://$S3_BUCKET/python/airflow_provider_infrabel_xcom_backend --recursive --endpoint-url $S3_ENDPOINT
+      
+      aws s3 cp ./public s3://$S3_BUCKET/python/airflow_provider_infrabel_xcom_backend --recursive --endpoint-url $S3_ENDPOINT
+  only:
+    - master
+
+sonarqube-check:
+  stage: Publish
+  dependencies:
+    - check-pylint
+    - check-pytest
+    - check-pytest-integration
+    - check-mutatest
+  image:
+    name: artifactory.msnet.railb.be/docker/sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  before_script: []
+  script:
+    - sonar-scanner
+  allow_failure: true
+  only:
+    - master
