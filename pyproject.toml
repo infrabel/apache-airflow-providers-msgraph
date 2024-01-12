@@ -15,7 +15,7 @@ license = "Proprietary"
 packages = [{include = "airflow/providers/microsoft/msgraph", from = "."}]
 
 [tool.poetry.dependencies]
-python = ">=3.9 <=3.12"
+python = ">=3.9"
 aiostream = "^0.5.2"
 apache-airflow = ">2.7"
 msgraph-sdk = "^1.0.0"
