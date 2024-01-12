@@ -32,15 +32,15 @@ jobs:
         pip install poetry
         poetry lock --no-update
         poetry install -vv  
-    - name: Run Flake8
+    - name: Run flake8
       run: poetry run pflake8 --ignore=E501 airflow/providers/microsoft/msgraph
-    - name: Run MyPu
+    - name: Run mypy
       run: |
         cd airflow/providers/microsoft
         poetry run mypy --config-file=../../../mypy.ini msgraph --namespace-packages
-    - name: Run Black
+    - name: Run black
       run: poetry run black airflow/providers/microsoft/msgraph --check --diff --color
-    - name: Run Pylint
+    - name: Run pylint
       run: |
         mkdir -p logs reports
         poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
