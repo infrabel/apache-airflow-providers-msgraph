@@ -10,10 +10,6 @@ extend-ignore = "E203,"
 name = "apache-airflow-providers-msgraph"
 version = "1.0.0"
 description = "Airflow provider package for Microsoft Graph API"
-long_description = """
-    Airflow provider package for Microsoft Graph API.
-"""
-long_description_content_type = "text/x-rst"
 authors = ["David Blain <david.blain@infrabel.be>"]
 license = "Proprietary"
 packages = [{include = "airflow/providers/microsoft/msgraph", from = "."}]
