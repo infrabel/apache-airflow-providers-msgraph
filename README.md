@@ -32,10 +32,10 @@ Getting users:
 from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
 
 users_task = MSGraphSDKAsyncOperator(
-        task_id="users_delta",
-        conn_id="msgraph_api",
-        expression="users.get()",
-    )
+    task_id="users_delta",
+    conn_id="msgraph_api",
+    expression="users.get()",
+)
 ```
 
 Getting users delta:
@@ -44,10 +44,10 @@ Getting users delta:
 from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
 
 users_delta_task = MSGraphSDKAsyncOperator(
-        task_id="users_delta",
-        conn_id="msgraph_api",
-        expression="users.delta.get()",
-    )
+    task_id="users_delta",
+    conn_id="msgraph_api",
+    expression="users.delta.get()",
+)
 ```
 
 Getting a site from it's relative path and then get pages related to that site:
