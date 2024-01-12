@@ -16,7 +16,7 @@ Making async API calls with Airflow: https://betterprogramming.pub/making-async-
 
 ### Configration
 
-![connection.png](connection.png)
+![connection.png](https://raw.githubusercontent.com/infrabel/apache-airflow-providers-msgraph/main/docs/images/connection.png)
 
 ### Examples
 
