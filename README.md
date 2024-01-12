@@ -7,8 +7,12 @@
 Airflow provider package for Microsoft Graph API.
 
 How to develop a Providers package correctly: https://airflow.apache.org/docs/apache-airflow-providers/
+
 Astronomer Providers registry: https://registry.astronomer.io/providers
+
 Making async API calls with Airflow: https://betterprogramming.pub/making-async-api-calls-with-airflow-dynamic-task-mapping-d0cbd3066ebb
+
+This provider makes use of the official Microsoft Graph Python SDK [msgraph-sdk-python](https://github.com/microsoftgraph/msgraph-sdk-python)
 
 
 ## Documentation
