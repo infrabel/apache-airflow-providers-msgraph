@@ -40,8 +40,19 @@ jobs:
         poetry run mypy --config-file=../../../mypy.ini msgraph --namespace-packages
     - name: Run Black
       run: poetry run black airflow/providers/microsoft/msgraph --check --diff --color
+    - name: Run Pylint
+      run: |
+        poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
+                          -r n \
+                          --msg-template="{path}':'{line}':' [{msg_id}({symbol}), {obj}] {msg}" | tee reports/pylint.txt
+    - name: Run Unit Tests
+      run: |
+        mkdir -p logs reports
+        poetry run nose2 --start-dir tests/unit --junit-xml --with-coverage --verbose
+        mv xunit-result.xml reports/xunit-result.xml
+        mv coverage.xml reports/coverage.xml
     - name: Build package
-      run: python -m build
+      run: poetry build
     - name: Publish package
       uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
       with:
