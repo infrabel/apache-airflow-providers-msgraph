@@ -28,7 +28,7 @@ from airflow.providers.microsoft.msgraph.version import __version__
 DEFAULT_CONN_NAME = "msgraph_default"
 CLIENT_TYPE: TypeVar = TypeVar(
     "CLIENT_TYPE",
-    msgraph.GraphServiceClient,
+    msgraph.GraphServiceClient,  # pylint: disable=E1101
     msgraph_beta.GraphServiceClient,  # pylint: disable=E1101
 )
 
