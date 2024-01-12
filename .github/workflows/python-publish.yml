@@ -45,7 +45,7 @@ jobs:
         poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
                           -r n \
                           --msg-template="{path}':'{line}':' [{msg_id}({symbol}), {obj}] {msg}" | tee reports/pylint.txt
-    - name: Run Unit Tests
+    - name: Run unit tests
       run: |
         mkdir -p logs reports
         poetry run nose2 --start-dir tests/unit --junit-xml --with-coverage --verbose
