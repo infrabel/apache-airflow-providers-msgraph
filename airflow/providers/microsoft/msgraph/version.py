@@ -18,7 +18,7 @@ Attributes:
 """
 from typing import Dict, Tuple
 
-__version__: str = "1.0.0"
+__version__: str = "1.0.1"
 
 
 def version_as_dict() -> Dict[str, str]:

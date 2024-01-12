@@ -8,7 +8,7 @@ extend-ignore = "E203,"
 
 [tool.poetry]
 name = "apache-airflow-providers-msgraph"
-version = "1.0.0"
+version = "1.0.1"
 description = "Airflow provider package for Microsoft Graph API"
 authors = ["David Blain <david.blain@infrabel.be>"]
 license = "Proprietary"

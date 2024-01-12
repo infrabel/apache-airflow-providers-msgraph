@@ -6,7 +6,7 @@ import pytest
 
 logger = logging.getLogger(__name__)
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 # Add custom options to pytest. Here we define the addition of an 'url' argument

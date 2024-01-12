@@ -1,7 +1,7 @@
 <p align="center"><h1 class="center-title">Airflow Provider Microsoft Graph API</h1></p>
 
 <p align="center">
-    <img src="https://img.shields.io/badge/artifactory-1.0.0-brightgreen" alt="Package version">
+    <img src="https://img.shields.io/badge/artifactory-1.0.1-brightgreen" alt="Package version">
     <img src="https://img.shields.io/badge/python-3.9_|_3.10_|_3.11-blue" alt="Python compatibility">
 </p>
 
@@ -13,6 +13,12 @@ Making async API calls with Airflow: https://betterprogramming.pub/making-async-
 
 
 ## Documentation
+
+### Installing
+
+```python
+pip install apache-airflow-providers-msgraph
+```
 
 ### Configration
 
