@@ -42,6 +42,7 @@ jobs:
       run: poetry run black airflow/providers/microsoft/msgraph --check --diff --color
     - name: Run Pylint
       run: |
+        mkdir -p logs reports
         poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
                           -r n \
                           --msg-template="{path}':'{line}':' [{msg_id}({symbol}), {obj}] {msg}" | tee reports/pylint.txt
