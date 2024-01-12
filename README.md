@@ -95,12 +95,8 @@ with DAG(
 ) as dag:
     @task(dag=dag)
     def get_response(**context):
-        logging.info("context: %s", context)
         params = context.get("params")
-        logging.info("params: %s", params)
         response = params.get("response")
-        logging.info("response: %s", response)
-        logging.info("response_type: %s", type(response))
         return response
         
     get_response()
