@@ -3,6 +3,7 @@
 <p align="center">
     <img src="https://img.shields.io/badge/artifactory-1.0.1-brightgreen" alt="Package version">
     <img src="https://img.shields.io/badge/python-3.8_|_3.9_|_3.10_|_3.11-blue" alt="Python compatibility">
+    [![Build Status](https://github.com/infrabel/apache-airflow-providers-msgraph/actions/workflows/python-publish.yml/badge.svg)](https://github.com/infrabel/apache-airflow-providers-msgraph/actions)
 </p>
 
 Airflow provider package for Microsoft Graph API.
