@@ -145,10 +145,10 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         dag_bag = MagicMock()
         dag_bag.dags = {trigger_dag_id}
         dag_bag.dags_hash = {trigger_dag_id: trigger_dag_id}
+        dag_bag.get_dag.side_effect=lambda dag_id: dag
 
-        with (patch("airflow.hooks.base.BaseHook.get_connection", side_effect=self.get_airflow_connection),
-              patch.object(DagBag, '__new__', return_value=dag_bag),
-              patch.object(dag_bag, 'get_dag', side_effect=lambda dag_id: dag)):
+        with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=self.get_airflow_connection), \
+             patch.object(DagBag, '__new__', return_value=dag_bag):
             users = self.load_json("resources", "users.json")
             next_users = self.load_json("resources", "next_users.json")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
