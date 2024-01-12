@@ -13,6 +13,7 @@ description = "Airflow provider package for Microsoft Graph API"
 authors = ["David Blain <david.blain@infrabel.be>"]
 license = "Proprietary"
 packages = [{include = "airflow/providers/microsoft/msgraph", from = "."}]
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4"
