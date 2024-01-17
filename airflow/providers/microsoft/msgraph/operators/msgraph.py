@@ -51,8 +51,6 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         You can pass an enum named APIVersion which has 2 possible members v1 and beta,
         or you can pass a string which equals the enum values as "v1.0" or "beta".
         This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
-    :param keep_events: A boolean which determines if the operator keeps track of the triggered events (default False).
-        If set to true, the aggregated events will be returned once the operator has finished executing.
     """
 
     template_fields: Sequence[str] = ("expression", "conn_id", "trigger_dag_id")
@@ -66,7 +64,6 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
         api_version: Union[APIVersion, str] = APIVersion.v1,
-        keep_events: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -76,7 +73,6 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         self.timeout = timeout
         self.proxies = proxies
         self.api_version = api_version
-        self.keep_events = keep_events
         self.events: List[Dict[Any, Any]] = []
 
     def execute(self, context: Context) -> None:
@@ -112,37 +108,40 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 response = json.loads(response)
                 event["response"] = response
 
-            if self.keep_events:
-                self.events.append(event)
+                if self.trigger_dag_id:
+                    dag_run = trigger_dag(
+                        dag_id=self.trigger_dag_id,
+                        conf=event,
+                        execution_date=timezone.utcnow(),
+                    )
 
-            if self.trigger_dag_id:
-                dag_run = trigger_dag(
-                    dag_id=self.trigger_dag_id,
-                    conf=event,
-                    execution_date=timezone.utcnow(),
-                )
+                    self.log.info(
+                        "Dag %s was triggered: %s", self.trigger_dag_id, dag_run
+                    )
+                elif self.do_xcom_push:
+                    self.events.append(event)
 
-                self.log.info("Dag %s was triggered: %s", self.trigger_dag_id, dag_run)
+                odata_next_link = response.get("@odata.nextLink")
+                response_type = event.get("type")
 
-            odata_next_link = response.get("@odata.nextLink")
-            response_type = event.get("type")
+                self.log.info("odata_next_link: %s", odata_next_link)
+                self.log.info("response_type: %s", response_type)
 
-            self.log.info("odata_next_link: %s", odata_next_link)
-            self.log.info("response_type: %s", response_type)
+                if odata_next_link and response_type:
+                    self.defer(
+                        trigger=MSGraphSDKAsyncSendTrigger(
+                            url=odata_next_link,
+                            response_type=response_type,
+                            conn_id=self.conn_id,
+                            timeout=self.timeout,
+                            proxies=self.proxies,
+                            api_version=self.api_version,
+                        ),
+                        method_name="execute_complete",
+                    )
 
-            if odata_next_link and response_type:
-                self.defer(
-                    trigger=MSGraphSDKAsyncSendTrigger(
-                        url=odata_next_link,
-                        response_type=response_type,
-                        conn_id=self.conn_id,
-                        timeout=self.timeout,
-                        proxies=self.proxies,
-                        api_version=self.api_version,
-                    ),
-                    method_name="execute_complete",
-                )
-
-            if self.keep_events:
-                return self.events
+                if self.do_xcom_push and self.events:
+                    if len(self.events) == 1:
+                        return self.events[0]
+                    return self.events
         return None
