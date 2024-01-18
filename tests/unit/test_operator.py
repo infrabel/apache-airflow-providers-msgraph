@@ -3,7 +3,6 @@ from unittest.mock import patch, MagicMock
 
 import mockito
 from airflow import DAG
-from airflow.configuration import AirflowConfigParser
 from airflow.exceptions import TaskDeferred, AirflowException
 from airflow.models import DagModel, Operator, DagBag, DagRun
 from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
@@ -22,9 +21,6 @@ from tests.unit.base import BaseTestCase
 
 
 class MSGraphSDKOperatorTestCase(BaseTestCase):
-    def setUp(self):
-        AirflowConfigParser().load_test_config()
-
     @staticmethod
     async def mock_get(value):
         return value

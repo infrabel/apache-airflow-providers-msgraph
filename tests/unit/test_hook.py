@@ -1,6 +1,5 @@
 from unittest.mock import patch
 
-from airflow import configuration
 from airflow.providers.microsoft.msgraph.hooks.msgraph import MSGraphSDKHook
 from assertpy import assert_that
 from mockito import mock, when
@@ -14,9 +13,6 @@ from tests.unit.base import BaseTestCase
 
 
 class MSGraphSDKHookTestCase(BaseTestCase):
-    def setUp(self):
-        configuration.load_test_config()
-
     @staticmethod
     async def mock_get(value):
         return value

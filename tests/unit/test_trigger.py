@@ -1,7 +1,6 @@
 from typing import List
 from unittest.mock import patch
 
-from airflow import configuration
 from airflow.providers.microsoft.msgraph.triggers.msgraph import MSGraphSDKEvaluateTrigger
 from airflow.triggers.base import TriggerEvent
 from assertpy import assert_that
@@ -18,9 +17,6 @@ from tests.unit.base import BaseTestCase
 
 
 class MSGraphSDKTriggerTestCase(BaseTestCase):
-    def setUp(self):
-        configuration.load_test_config()
-
     @staticmethod
     async def mock_get(value):
         return value
