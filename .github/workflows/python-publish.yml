@@ -11,60 +11,15 @@ name: Apache Airflow Providers MS Graph SDK
 on:
   release:
     types: [published]
-  push:
-    branches:
-      - '*'
 
 permissions:
   contents: read
 
 jobs:
-  commit:
-    runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        python-version: ['3.8']
-
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install poetry
-          poetry lock --no-update
-          poetry install -vv
-      - name: Run flake8
-        run: poetry run pflake8 --ignore=E501 airflow/providers/microsoft/msgraph
-      - name: Run mypy
-        run: |
-          cd airflow/providers/microsoft
-          poetry run mypy --config-file=../../../mypy.ini msgraph --namespace-packages
-      - name: Run black
-        run: poetry run black airflow/providers/microsoft/msgraph --check --diff --color
-      - name: Run pylint
-        run: |
-          mkdir -p logs reports
-          poetry run pylint --fail-under=6.5 airflow/providers/microsoft/msgraph \
-                            -r n \
-                            --msg-template="{path}':'{line}':' [{msg_id}({symbol}), {obj}] {msg}" | tee reports/pylint.txt
-      - name: Run unit tests
-        run: |
-          mkdir -p logs reports
-          poetry run nose2 --start-dir tests/unit --junit-xml --with-coverage --verbose
-          mv xunit-result.xml reports/xunit-result.xml
-          mv coverage.xml reports/coverage.xml
-      - name: Build package
-        run: poetry build
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: python-package-artifacts
-          path: dist
+  build-and-test:
+    uses: ./python-build.yaml
+    with:
+      job: build
 
   release:
     needs: commit
