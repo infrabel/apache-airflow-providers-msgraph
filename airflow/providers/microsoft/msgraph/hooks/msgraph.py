@@ -178,6 +178,7 @@ class MSGraphSDKHook(BaseHook):
                 request_adapter=request_adapter
             )
             self.cached_clients[self.conn_id] = client
+            self.api_version = api_version
         return client
 
     async def evaluate(self, expression: str) -> Any:
