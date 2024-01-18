@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, Union, List
 
+from airflow import AirflowException
 from airflow.api.common.trigger_dag import trigger_dag
 from airflow.models import BaseOperator
 from airflow.providers.microsoft.msgraph import DEFAULT_CONN_NAME
@@ -95,11 +96,14 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         Relies on trigger to throw an exception, otherwise it assumes execution was
         successful.
         """
-        self.log.info(
-            "%s completed with %s: %s", self.task_id, event.get("status"), event
-        )
-
         if event:
+            self.log.info(
+                "%s completed with %s: %s", self.task_id, event.get("status"), event
+            )
+
+            if event.get("status") == "failure":
+                raise AirflowException(event.get("message"))
+
             response = event.get("response")
 
             self.log.info("response: %s", response)
