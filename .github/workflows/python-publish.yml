@@ -60,12 +60,21 @@ jobs:
           mv coverage.xml reports/coverage.xml
       - name: Build package
         run: poetry build
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-package-artifacts
+          path: dist
 
   release:
     needs: commit
     runs-on: ubuntu-latest
 
     steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: python-package-artifacts
       - name: Publish package
         run: |
           poetry config pypi-token.pypi ${{ secrets.PYPI_API_TOKEN }}
