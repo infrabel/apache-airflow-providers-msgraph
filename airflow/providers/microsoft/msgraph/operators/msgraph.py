@@ -73,7 +73,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         self.timeout = timeout
         self.proxies = proxies
         self.api_version = api_version
-        self.events: List[Dict[Any, Any]] = []
+        self.results: List[Dict[Any, Any]] = []
 
     def execute(self, context: Context) -> None:
         self.defer(
@@ -119,7 +119,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                         "Dag %s was triggered: %s", self.trigger_dag_id, dag_run
                     )
                 elif self.do_xcom_push:
-                    self.events.append(event)
+                    self.results.append(response)
 
                 odata_next_link = response.get("@odata.nextLink")
                 response_type = event.get("type")
@@ -140,8 +140,8 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                         method_name="execute_complete",
                     )
 
-                if self.do_xcom_push and self.events:
-                    if len(self.events) == 1:
-                        return self.events[0]
-                    return self.events
+                if self.do_xcom_push and self.results:
+                    if len(self.results) == 1:
+                        return self.results[0]
+                    return self.results
         return None

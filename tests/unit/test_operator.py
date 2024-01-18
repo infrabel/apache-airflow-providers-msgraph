@@ -87,6 +87,12 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             result, events = self.execute_operator(operator)
 
             assert_that(result).is_length(2)
+            assert_that(result[0]).is_type_of(dict)
+            assert_that(result[0]).contains_entry({"@odata.context":
+                                                   "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
+            assert_that(result[1]).is_type_of(dict)
+            assert_that(result[1]).contains_entry({"@odata.context":
+                                                  "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
             assert_that(events).is_length(2)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
