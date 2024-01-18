@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from types import ModuleType
-from typing import Dict, Optional, Any, Union, TYPE_CHECKING
+from typing import Dict, Optional, Any, Union, TYPE_CHECKING, Tuple
 
 import httpx
 import msgraph_beta
@@ -66,27 +66,32 @@ class MSGraphSDKHook(BaseHook):
         APIVersion.v1: msgraph,
         APIVersion.beta: msgraph_beta,
     }
-    cached_clients: Dict[str, CLIENT_TYPE] = {}
+    cached_clients: Dict[str, Tuple[APIVersion, CLIENT_TYPE]] = {}
 
     def __init__(
         self,
         conn_id: str = DEFAULT_CONN_NAME,
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
-        api_version: Union[APIVersion, str] = APIVersion.v1,
+        api_version: Optional[Union[APIVersion, str]] = None,
     ) -> None:
         self.conn_id = conn_id
         self.timeout = timeout
         self.proxies = proxies
-        self.api_version = self.resolve_api_version_from_value(api_version)
+        self._api_version = self.resolve_api_version_from_value(api_version)
 
     @property
     def request_adapter(self) -> RequestAdapter:
         return self.get_conn().request_adapter
 
+    @property
+    def api_version(self) -> APIVersion:
+        self.get_conn()  # Make sure config has been loaded through get_conn to have correct api version!
+        return self._api_version
+
     @staticmethod
     def resolve_api_version_from_value(
-        api_version: Union[APIVersion, str], default: APIVersion = APIVersion.v1
+        api_version: Union[APIVersion, str], default: Optional[APIVersion] = None
     ) -> APIVersion:
         if isinstance(api_version, APIVersion):
             return api_version
@@ -96,19 +101,20 @@ class MSGraphSDKHook(BaseHook):
         )
 
     def get_api_version(self, config: Dict) -> APIVersion:
-        api_version = config.get("api_version")
+        api_version = config.get("api_version", self._api_version)
 
         return self.resolve_api_version_from_value(
-            api_version=api_version, default=self.api_version
+            api_version=api_version, default=APIVersion.v1
         )
 
-    def get_base_url(self, config: Dict, connection: Connection) -> str:
+    @staticmethod
+    def get_base_url(config: Dict, connection: Connection) -> str:
         if connection.schema and connection.host:
             return f"{connection.schema}://{connection.host}"
         return config.get("base_url", NationalClouds.Global.value)
 
-    @classmethod
-    def to_httpx_proxies(cls, proxies: Dict) -> Dict:
+    @staticmethod
+    def to_httpx_proxies(proxies: Dict) -> Dict:
         proxies = proxies.copy()
         if proxies.get("http"):
             proxies["http://"] = proxies.pop("http")
@@ -122,7 +128,7 @@ class MSGraphSDKHook(BaseHook):
                 "Failed to create Microsoft Graph SDK client. No conn_id provided!"
             )
 
-        client = self.cached_clients.get(self.conn_id)
+        api_version, client = self.cached_clients.get(self.conn_id, (None, None))
 
         if not client:
             connection = self.get_connection(conn_id=self.conn_id)
@@ -177,8 +183,8 @@ class MSGraphSDKHook(BaseHook):
             client = self.sdk_modules[api_version].GraphServiceClient(
                 request_adapter=request_adapter
             )
-            self.cached_clients[self.conn_id] = client
-            self.api_version = api_version
+            self.cached_clients[self.conn_id] = (api_version, client)
+        self._api_version = api_version
         return client
 
     async def evaluate(self, expression: str) -> Any:

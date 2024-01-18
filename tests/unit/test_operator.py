@@ -18,6 +18,7 @@ from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuil
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 
 from tests.unit.base import BaseTestCase
+from tests.unit.conftest import load_json, mock_client, get_airflow_connection
 
 
 class MSGraphSDKOperatorTestCase(BaseTestCase):
@@ -58,17 +59,17 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
     def test_run_when_expression_is_valid(self):
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
-                side_effect=self.get_airflow_connection,
+                side_effect=get_airflow_connection,
         )):
-            users = self.load_json("resources", "users.json")
-            next_users = self.load_json("resources", "next_users.json")
+            users = load_json("resources", "users.json")
+            next_users = load_json("resources", "next_users.json")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
             next_response = JsonParseNode(next_users).get_object_value(
                 DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
             when(delta_request_builder).get().thenReturn(self.mock_get(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter = self.mock_client({"users": users_request_builder}).request_adapter
+            request_adapter = mock_client({"users": users_request_builder}).request_adapter
             when(request_adapter).send_async(
                 request_info=ANY,
                 parsable_factory=mockito.eq(DeltaGetResponse),
@@ -103,15 +104,15 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
     def test_run_when_expression_is_valid_and_do_xcom_push_is_false(self):
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
-                side_effect=self.get_airflow_connection,
+                side_effect=get_airflow_connection,
         )):
-            users = self.load_json("resources", "users.json")
+            users = load_json("resources", "users.json")
             users.pop("@odata.nextLink")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
             when(delta_request_builder).get().thenReturn(self.mock_get(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            self.mock_client({"users": users_request_builder})
+            mock_client({"users": users_request_builder})
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
@@ -132,12 +133,12 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
     def test_run_when_an_exception_occurs(self):
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
-                side_effect=self.get_airflow_connection,
+                side_effect=get_airflow_connection,
         )):
             delta_request_builder = mock(spec=DeltaRequestBuilder)
             when(delta_request_builder).get().thenRaise(AirflowException("The conn_id `msgraph_api` isn't defined"))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            self.mock_client({"users": users_request_builder})
+            mock_client({"users": users_request_builder})
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
@@ -168,16 +169,16 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         dag_bag.dags_hash = {trigger_dag_id: trigger_dag_id}
         dag_bag.get_dag.side_effect=lambda dag_id: dag
 
-        with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=self.get_airflow_connection), \
+        with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=get_airflow_connection), \
              patch.object(DagBag, '__new__', return_value=dag_bag):
-            users = self.load_json("resources", "users.json")
-            next_users = self.load_json("resources", "next_users.json")
+            users = load_json("resources", "users.json")
+            next_users = load_json("resources", "next_users.json")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
             next_response = JsonParseNode(next_users).get_object_value(DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
             when(delta_request_builder).get().thenReturn(self.mock_get(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter = self.mock_client({"users": users_request_builder}).request_adapter
+            request_adapter =mock_client({"users": users_request_builder}).request_adapter
             when(request_adapter).send_async(
                 request_info=ANY,
                 parsable_factory=mockito.eq(DeltaGetResponse),

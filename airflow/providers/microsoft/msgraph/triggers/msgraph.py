@@ -34,7 +34,7 @@ class MSGraphSDKBaseTrigger(BaseTrigger):
         conn_id: str = DEFAULT_CONN_NAME,
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
-        api_version: Union[APIVersion, str] = APIVersion.v1,
+        api_version: Optional[APIVersion] = None,
     ):
         super().__init__()
         self.conn_id = conn_id
@@ -44,13 +44,14 @@ class MSGraphSDKBaseTrigger(BaseTrigger):
 
     def serialize(self) -> tuple[str, dict[str, Any]]:
         """Serializes HttpTrigger arguments and classpath."""
+        api_version = self.api_version.value if self.api_version else None
         return (
             f"{self.__class__.__module__}.{self.__class__.__name__}",
             {
                 "conn_id": self.conn_id,
                 "timeout": self.timeout,
                 "proxies": self.proxies,
-                "api_version": self.api_version.value,
+                "api_version": api_version,
             },
         )
 

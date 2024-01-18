@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, Union, List
+from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, List
 
 from airflow import AirflowException
 from airflow.api.common.trigger_dag import trigger_dag
@@ -64,7 +64,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         trigger_dag_id: Optional[str] = None,
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
-        api_version: Union[APIVersion, str] = APIVersion.v1,
+        api_version: Optional[APIVersion] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
