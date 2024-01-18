@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 import mockito
 from airflow import DAG
 from airflow.configuration import AirflowConfigParser
-from airflow.exceptions import TaskDeferred
+from airflow.exceptions import TaskDeferred, AirflowException
 from airflow.models import DagModel, Operator, DagBag, DagRun
 from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
 from airflow.providers.microsoft.msgraph.triggers.msgraph import MSGraphSDKEvaluateTrigger
@@ -132,6 +132,25 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             assert_that(events[0].payload["type"]).is_equal_to(
                 f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
             assert_that(events[0].payload["response"]).is_equal_to(users)
+
+    def test_run_when_an_exception_occurs(self):
+        with (patch(
+                "airflow.hooks.base.BaseHook.get_connection",
+                side_effect=self.get_airflow_connection,
+        )):
+            delta_request_builder = mock(spec=DeltaRequestBuilder)
+            when(delta_request_builder).get().thenRaise(AirflowException("The conn_id `msgraph_api` isn't defined"))
+            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
+            self.mock_client({"users": users_request_builder})
+            operator = MSGraphSDKAsyncOperator(
+                task_id="users_delta",
+                conn_id="msgraph_api",
+                expression="users.delta.get()",
+                do_xcom_push=False,
+            )
+
+            with self.assertRaises(AirflowException):
+                self.execute_operator(operator)
 
     def test_run_when_valid_expression_and_trigger_dag_id(self):
         trigger_dag_id = "triggered_dag_id"
