@@ -17,7 +17,7 @@ from mockito import mock, when
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph_core import GraphClientFactory, APIVersion
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 AirflowConfigParser().load_test_config()
 odata_error_type: Type[ODataError] = ODataError  # we need to load this type otherwise tests will fail due to dynamic loading of modules
 
