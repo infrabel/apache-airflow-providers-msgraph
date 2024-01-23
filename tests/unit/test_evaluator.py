@@ -5,6 +5,10 @@ from assertpy import assert_that
 from mockito import mock, when
 from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuilder
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
+from msgraph_beta.generated.models.base_item_collection_response import BaseItemCollectionResponse
+from msgraph_beta.generated.sites.item.items.items_request_builder import ItemsRequestBuilder
+from msgraph_beta.generated.sites.item.lists.item.list_item_request_builder import ListItemRequestBuilder
+from msgraph_beta.generated.sites.item.lists.lists_request_builder import ListsRequestBuilder
 from msgraph_beta.generated.sites.item.site_item_request_builder import SiteItemRequestBuilder
 from msgraph_beta.generated.sites.sites_request_builder import SitesRequestBuilder
 
@@ -71,3 +75,24 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
 
         assert_that(method_name).is_equal_to("by_site_id")
         assert_that(args).is_length(2).contains_only(site_id)
+
+    def test_evaluate_when_expression_with_dict_as_parameter_should_become_dataclass(self):
+        site_id = "accinfrabel.sharepoint.com,dab36736-0b47-44c1-9543-3688bd792230,1b30fecf-4330-4899-b249-104c2afaf9ed"
+        list_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
+        item = mock(spec=BaseItemCollectionResponse)
+        lists_request_builder = mock(spec=ListsRequestBuilder)
+        items = mock(spec=ItemsRequestBuilder)
+        request_configuration = ItemsRequestBuilder.ItemsRequestBuilderGetRequestConfiguration(
+            query_parameters=ItemsRequestBuilder.ItemsRequestBuilderGetQueryParameters(expand=["fields"])
+        )
+        when(items).get(request_configuration).thenReturn(self.mock_get([item]))
+        lists_item_request_builder = mock({"items": items}, spec=ListItemRequestBuilder)
+        when(lists_request_builder).by_list_id(list_id).thenReturn(lists_item_request_builder)
+        site_item_request_builder = mock({"lists": lists_request_builder}, spec=SiteItemRequestBuilder)
+        sites_request_builder = mock(spec=SitesRequestBuilder)
+        when(sites_request_builder).by_site_id(site_id).thenReturn(site_item_request_builder)
+        client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
+
+        actual = self._loop.run_until_complete(ExpressionEvaluator(client=client).evaluate(f"sites.by_site_id('{site_id}').lists.by_list_id('{list_id}').items.get({{'query_parameters': {{'expand': ['fields']}}}})"))
+
+        assert_that(actual).contains_only(item)

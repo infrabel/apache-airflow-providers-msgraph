@@ -8,10 +8,16 @@ from tests.unit.conftest import load_json, load_file
 
 
 class ResponseSerializerTestCase(BaseTestCase):
-    def test_serialize(self):
+    def test_serialize_when_parsable_type(self):
         response = JsonParseNode(load_json("resources", "users.json")).get_object_value(DeltaGetResponse)
 
         actual = ResponseSerializer.serialize(response)
 
-        assert_that(actual).is_type_of(str)
-        assert_that(actual).is_equal_to(load_file("resources", "users.json"))
+        assert_that(actual).is_type_of(str).is_equal_to(load_file("resources", "users.json"))
+
+    def test_serialize_when_bytes(self):
+        response = load_file("resources", "users.json").encode()
+
+        actual = ResponseSerializer.serialize(response)
+
+        assert_that(actual).is_type_of(bytes).is_same_as(response)

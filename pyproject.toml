@@ -19,6 +19,7 @@ repository = "https://github.com/infrabel/apache-airflow-providers-msgraph"
 [tool.poetry.dependencies]
 python = ">=3.8.1,<4"
 aiostream = "^0.5.2"
+dacite = "^1.8.1"
 apache-airflow = ">2.7"
 msgraph-sdk = "^1.0.0"
 msgraph-beta-sdk = "^1.0.0"

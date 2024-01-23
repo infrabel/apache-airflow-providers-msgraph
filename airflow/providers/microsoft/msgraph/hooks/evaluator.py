@@ -19,8 +19,12 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
+import inspect
 import re
 from typing import TYPE_CHECKING
+
+from dacite import from_dict
 
 if TYPE_CHECKING:
     from airflow.providers.microsoft.msgraph import CLIENT_TYPE
@@ -32,21 +36,40 @@ class ExpressionEvaluator:
         self.attributes_pattern = re.compile(r"\.(?![^\(]*\))")
         self.attribute_pattern = re.compile(r'["\']([^"\']*)["\']')
 
+    def get_argument(self, arg):
+        if isinstance(arg, ast.Dict):
+            return ast.literal_eval(arg)
+        return self.attribute_pattern.sub(lambda match: match.group(1), arg.value)
+
     def get_arguments(self, attribute: str):
         if "(" in attribute and ")" in attribute:
             method_name, raw_args = attribute.split("(")
             args = [
-                self.attribute_pattern.sub(lambda match: match.group(1), arg.value)
+                self.get_argument(arg)
                 for arg in ast.parse(f"dummy({raw_args[:-1]})").body[0].value.args
             ]
             return method_name, args
         return attribute, None
 
+    def evaluate_arguments(self, target, method, args):
+        inner_types = dict(target.__class__.__dict__)
+        method_signature = inspect.signature(method)
+        for index, param in enumerate(method_signature.parameters.values()):
+            annotation = ast.parse(param.annotation, mode="eval")
+            if isinstance(annotation.body, ast.Subscript):
+                param_type = inner_types.get(annotation.body.slice.id)
+            else:
+                param_type = inner_types.get(annotation.body.id)
+            if dataclasses.is_dataclass(param_type):
+                args[index] = from_dict(data_class=param_type, data=args[index])
+        return args
+
     def invoke(self, target, attribute: str):
         method_name, args = self.get_arguments(attribute)
         if args is not None:
             if len(args) > 0:
-                return getattr(target, method_name)(*args)
+                method = getattr(target, method_name)
+                return method(*self.evaluate_arguments(target, method, args))
             return getattr(target, method_name)()
         return getattr(target, method_name)
 

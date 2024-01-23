@@ -77,6 +77,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         self.results: List[Dict[Any, Any]] = []
 
     def execute(self, context: Context) -> None:
+        self.log.info("Executing expression: '%s'", self.expression)
         self.defer(
             trigger=MSGraphSDKEvaluateTrigger(
                 expression=self.expression,
@@ -115,7 +116,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 if self.trigger_dag_id:
                     dag_run = trigger_dag(
                         dag_id=self.trigger_dag_id,
-                        conf=event,
+                        conf=response,
                         execution_date=timezone.utcnow(),
                     )
 
