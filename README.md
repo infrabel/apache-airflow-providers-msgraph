@@ -2,7 +2,7 @@
 
 [![PyPI version](https://badge.fury.io/py/msgraph-sdk.svg)](https://pypi.org/project/apache-airflow-providers-msgraph/)
 ![Python compatibility](https://img.shields.io/badge/python-3.8_|_3.9_|_3.10_|_3.11-blue)
-[![Build status](https://github.com/infrabel/apache-airflow-providers-msgraph/actions/workflows/python-publish.yml/badge.svg)](https://github.com/infrabel/apache-airflow-providers-msgraph/actions)
+[![Build status](https://github.com/infrabel/apache-airflow-providers-msgraph/actions/workflows/python-build.yml/badge.svg)](https://github.com/infrabel/apache-airflow-providers-msgraph/actions)
 
 Airflow provider package for Microsoft Graph API.
 
