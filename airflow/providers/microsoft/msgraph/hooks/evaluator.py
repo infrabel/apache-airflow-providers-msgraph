@@ -57,7 +57,9 @@ class ExpressionEvaluator:
         method_signature = inspect.signature(method)
         for index, param in enumerate(method_signature.parameters.values()):
             annotation = ast.parse(param.annotation, mode="eval")
-            if isinstance(annotation.body, ast.Subscript):
+            if isinstance(annotation.body, ast.Subscript) and isinstance(
+                annotation.slice, ast.Index
+            ):
                 param_type = inner_types.get(annotation.body.slice.id)
             else:
                 param_type = inner_types.get(annotation.body.id)
