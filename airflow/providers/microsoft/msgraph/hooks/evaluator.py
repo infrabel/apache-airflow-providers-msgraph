@@ -31,10 +31,11 @@ if TYPE_CHECKING:
 
 
 class ExpressionEvaluator:
+    attributes_pattern = re.compile(r"\.(?![^\(]*\))")
+    attribute_pattern = re.compile(r'["\']([^"\']*)["\']')
+
     def __init__(self, client: CLIENT_TYPE):
         self.client = client
-        self.attributes_pattern = re.compile(r"\.(?![^\(]*\))")
-        self.attribute_pattern = re.compile(r'["\']([^"\']*)["\']')
 
     def get_argument(self, arg):
         if isinstance(arg, ast.Dict):
