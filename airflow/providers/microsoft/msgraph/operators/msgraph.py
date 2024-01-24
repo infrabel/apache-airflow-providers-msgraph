@@ -19,6 +19,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
+from json import JSONDecodeError
 from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, List
 
 from airflow import AirflowException
@@ -110,7 +112,9 @@ class MSGraphSDKAsyncOperator(BaseOperator):
             self.log.info("response: %s", response)
 
             if response:
-                response = json.loads(response)
+                if isinstance(response, str):
+                    with suppress(JSONDecodeError):
+                        response = json.loads(response)
                 event["response"] = response
 
                 if self.trigger_dag_id:
@@ -126,24 +130,25 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 elif self.do_xcom_push:
                     self.results.append(response)
 
-                odata_next_link = response.get("@odata.nextLink")
-                response_type = event.get("type")
+                if isinstance(response, dict):
+                    odata_next_link = response.get("@odata.nextLink")
+                    response_type = event.get("type")
 
-                self.log.info("odata_next_link: %s", odata_next_link)
-                self.log.info("response_type: %s", response_type)
+                    self.log.info("odata_next_link: %s", odata_next_link)
+                    self.log.info("response_type: %s", response_type)
 
-                if odata_next_link and response_type:
-                    self.defer(
-                        trigger=MSGraphSDKAsyncSendTrigger(
-                            url=odata_next_link,
-                            response_type=response_type,
-                            conn_id=self.conn_id,
-                            timeout=self.timeout,
-                            proxies=self.proxies,
-                            api_version=self.api_version,
-                        ),
-                        method_name="execute_complete",
-                    )
+                    if odata_next_link and response_type:
+                        self.defer(
+                            trigger=MSGraphSDKAsyncSendTrigger(
+                                url=odata_next_link,
+                                response_type=response_type,
+                                conn_id=self.conn_id,
+                                timeout=self.timeout,
+                                proxies=self.proxies,
+                                api_version=self.api_version,
+                            ),
+                            method_name="execute_complete",
+                        )
 
                 if self.do_xcom_push and self.results:
                     if len(self.results) == 1:

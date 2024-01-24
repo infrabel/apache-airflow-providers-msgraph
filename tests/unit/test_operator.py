@@ -16,9 +16,14 @@ from mockito import mock, when, ANY
 from msgraph.generated.users.delta.delta_get_response import DeltaGetResponse
 from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuilder
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
+from msgraph_beta.generated.drives.drives_request_builder import DrivesRequestBuilder
+from msgraph_beta.generated.drives.item.drive_item_request_builder import DriveItemRequestBuilder
+from msgraph_beta.generated.drives.item.items.item.drive_item_item_request_builder import DriveItemItemRequestBuilder
+from msgraph_beta.generated.drives.item.items.items_request_builder import ItemsRequestBuilder
+from msgraph_beta.generated.drives.item.root.content.content_request_builder import ContentRequestBuilder
 
 from tests.unit.base import BaseTestCase
-from tests.unit.conftest import load_json, mock_client, get_airflow_connection
+from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file
 
 
 class MSGraphSDKOperatorTestCase(BaseTestCase):
@@ -208,3 +213,37 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             assert_that(events[1].payload["type"]).is_equal_to(
                 f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
             assert_that(events[1].payload["response"]).is_equal_to(next_users)
+
+    def test_run_when_valid_expression_which_returns_bytes(self):
+        "drives.by_drive_id('{}').items.by_drive_item_id('{}').content.get()"
+        with (patch(
+                "airflow.hooks.base.BaseHook.get_connection",
+                side_effect=get_airflow_connection,
+        )):
+            content = load_file("resources", "users.json").encode()
+            drive_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
+            drive_item_id = "100"
+            content_request_builder = mock(spec=ContentRequestBuilder)
+            when(content_request_builder).get().thenReturn(self.mock_get(content))
+            drive_item_item_request_builder = mock({"content": content_request_builder}, spec=DriveItemItemRequestBuilder)
+            items_request_builder = mock( spec=ItemsRequestBuilder)
+            when(items_request_builder).by_drive_item_id(drive_item_id).thenReturn(drive_item_item_request_builder)
+            drive_item_request_builder = mock({"items": items_request_builder}, spec=DriveItemRequestBuilder)
+
+            drives_request_builder = mock(spec=DrivesRequestBuilder)
+            when(drives_request_builder).by_drive_id(drive_id).thenReturn(drive_item_request_builder)
+            mock_client({"drives": drives_request_builder})
+            operator = MSGraphSDKAsyncOperator(
+                task_id="drive_item_content",
+                conn_id="msgraph_api",
+                expression=f"drives.by_drive_id('{drive_id}').items.by_drive_item_id('{drive_item_id}').content.get()",
+            )
+
+            result, events = self.execute_operator(operator)
+
+            assert_that(result).is_equal_to(content)
+            assert_that(events).is_length(1)
+            assert_that(events[0]).is_type_of(TriggerEvent)
+            assert_that(events[0].payload["status"]).is_equal_to("success")
+            assert_that(events[0].payload["type"]).is_equal_to(f"{bytes.__module__}.{bytes.__name__}")
+            assert_that(events[0].payload["response"]).is_equal_to(content)
