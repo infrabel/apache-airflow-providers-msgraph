@@ -1,13 +1,9 @@
 import json
-import os
 from os.path import join, dirname
 from typing import Iterable, Dict, Type
 
 import httpx
 import msgraph
-
-os.environ['_AIRFLOW__AS_LIBRARY'] = '1'
-
 from airflow.configuration import AirflowConfigParser
 from airflow.models import Connection
 from airflow.providers.microsoft.msgraph import CLIENT_TYPE
