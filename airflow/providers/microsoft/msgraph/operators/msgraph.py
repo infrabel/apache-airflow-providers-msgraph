@@ -56,7 +56,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
     """
 
-    template_fields: Sequence[str] = ("expression", "conn_id", "trigger_dag_id")
+    template_fields: Sequence[str] = ("expression", "conn_id", "trigger_dag_ids")
 
     def __init__(
         self,
