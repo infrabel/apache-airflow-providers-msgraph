@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from contextlib import suppress
 from json import JSONDecodeError
-from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, List
+from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, List, Collection
 
 from airflow import AirflowException
 from airflow.api.common.trigger_dag import trigger_dag
@@ -64,6 +64,7 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         expression: Optional[str],
         conn_id: str = DEFAULT_CONN_NAME,
         trigger_dag_id: Optional[str] = None,
+        trigger_dag_ids: Optional[Collection[str]] = None,
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
         api_version: Optional[APIVersion] = None,
@@ -72,7 +73,8 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         super().__init__(**kwargs)
         self.expression = expression
         self.conn_id = conn_id
-        self.trigger_dag_id = trigger_dag_id
+        self.trigger_dag_ids = trigger_dag_ids or []
+        self.trigger_dag_ids.append(trigger_dag_id) if trigger_dag_id else None
         self.timeout = timeout
         self.proxies = proxies
         self.api_version = api_version
@@ -115,16 +117,8 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 response = self.parse_response(response)
                 event["response"] = response
 
-                if self.trigger_dag_id:
-                    dag_run = trigger_dag(
-                        dag_id=self.trigger_dag_id,
-                        conf=response,
-                        execution_date=timezone.utcnow(),
-                    )
-
-                    self.log.info(
-                        "Dag %s was triggered: %s", self.trigger_dag_id, dag_run
-                    )
+                if self.trigger_dag_ids:
+                    self.trigger_dags(response)
                 elif self.do_xcom_push:
                     self.results.append(response)
 
@@ -135,6 +129,18 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                         return self.results[0]
                     return self.results
         return None
+
+    def trigger_dags(self, response):
+        if isinstance(self.trigger_dag_ids, str):
+            self.trigger_dag_ids = [self.trigger_dag_ids]
+        for trigger_dag_id in self.trigger_dag_ids:
+            dag_run = trigger_dag(
+                dag_id=trigger_dag_id,
+                conf=response,
+                execution_date=timezone.utcnow(),
+            )
+
+            self.log.info("Dag %s was triggered: %s", trigger_dag_id, dag_run)
 
     def trigger_next_link(self, event, response):
         if isinstance(response, dict):
