@@ -93,3 +93,4 @@ target/
 
 # Pyenv
 /.python-version
+/constraints-*.txt
