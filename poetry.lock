@@ -511,13 +511,13 @@ yaml = ["PyYAML (>=3.10)"]
 
 [[package]]
 name = "argcomplete"
-version = "3.2.1"
+version = "3.2.2"
 description = "Bash tab completion for argparse"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "argcomplete-3.2.1-py3-none-any.whl", hash = "sha256:30891d87f3c1abe091f2142613c9d33cac84a5e15404489f033b20399b691fec"},
-    {file = "argcomplete-3.2.1.tar.gz", hash = "sha256:437f67fb9b058da5a090df505ef9be0297c4883993f3f56cb186ff087778cfb4"},
+    {file = "argcomplete-3.2.2-py3-none-any.whl", hash = "sha256:e44f4e7985883ab3e73a103ef0acd27299dbfe2dfed00142c35d4ddd3005901d"},
+    {file = "argcomplete-3.2.2.tar.gz", hash = "sha256:f3e49e8ea59b4026ee29548e24488af46e30c9de57d48638e24f54a1ea1000a2"},
 ]
 
 [package.extras]
@@ -2775,13 +2775,13 @@ pytz = "*"
 
 [[package]]
 name = "mkdocs-material"
-version = "9.5.4"
+version = "9.5.5"
 description = "Documentation that simply works"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "mkdocs_material-9.5.4-py3-none-any.whl", hash = "sha256:efd7cc8ae03296d728da9bd38f4db8b07ab61f9738a0cbd0dfaf2a15a50e7343"},
-    {file = "mkdocs_material-9.5.4.tar.gz", hash = "sha256:3d196ee67fad16b2df1a458d650a8ac1890294eaae368d26cee71bc24ad41c40"},
+    {file = "mkdocs_material-9.5.5-py3-none-any.whl", hash = "sha256:ac50b2431a79a3b160fdefbba37c9132485f1a69166aba115ad49fafdbbbc5df"},
+    {file = "mkdocs_material-9.5.5.tar.gz", hash = "sha256:4480d9580faf42fed0123d0465502bfc1c0c239ecc9c4d66159cf0459ea1b4ae"},
 ]
 
 [package.dependencies]
@@ -2799,7 +2799,7 @@ requests = ">=2.26,<3.0"
 
 [package.extras]
 git = ["mkdocs-git-committers-plugin-2 (>=1.1,<2.0)", "mkdocs-git-revision-date-localized-plugin (>=1.2,<2.0)"]
-imaging = ["cairosvg (>=2.6,<3.0)", "pillow (>=9.4,<10.0)"]
+imaging = ["cairosvg (>=2.6,<3.0)", "pillow (>=10.2,<11.0)"]
 recommended = ["mkdocs-minify-plugin (>=0.7,<1.0)", "mkdocs-redirects (>=1.2,<2.0)", "mkdocs-rss-plugin (>=1.6,<2.0)"]
 
 [[package]]
@@ -2907,13 +2907,13 @@ dev = ["bumpver", "isort", "mypy", "pylint", "pytest", "yapf"]
 
 [[package]]
 name = "msgraph-sdk"
-version = "1.0.0"
+version = "1.1.0"
 description = "The Microsoft Graph Python SDK"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "msgraph-sdk-1.0.0.tar.gz", hash = "sha256:78c301d2aac7ac19bf3e2ace4356c6a077f50f3fd6e6da222fbe4dcbac0c5540"},
-    {file = "msgraph_sdk-1.0.0-py3-none-any.whl", hash = "sha256:977cf806490077743530d0aa239c517be0035025299b62d50395b7fbf7e534ef"},
+    {file = "msgraph-sdk-1.1.0.tar.gz", hash = "sha256:c81bbd7c82b1237a25baee46d2a40ea3eabd15e06c5e50621ad4a9045012da5d"},
+    {file = "msgraph_sdk-1.1.0-py3-none-any.whl", hash = "sha256:661b6ddcc76391434af505bef0c3729405418402b3a7e673f1d094cb4fd5f80a"},
 ]
 
 [package.dependencies]
@@ -2923,7 +2923,7 @@ microsoft-kiota-authentication-azure = ">=1.0.0,<2.0.0"
 microsoft-kiota-http = ">=1.0.0,<2.0.0"
 microsoft-kiota-serialization-json = ">=1.0.0,<2.0.0"
 microsoft-kiota-serialization-text = ">=1.0.0,<2.0.0"
-msgraph-core = ">=1.0.0a2"
+msgraph-core = ">=1.0.0"
 
 [package.extras]
 dev = ["bumpver", "isort", "mypy", "pylint", "pytest", "yapf"]
@@ -4446,6 +4446,17 @@ testing = ["build[virtualenv]", "filelock (>=3.4.0)", "flake8-2020", "ini2toml[l
 testing-integration = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "jaraco.envs (>=2.2)", "jaraco.path (>=3.2.0)", "packaging (>=23.1)", "pytest", "pytest-enabler", "pytest-xdist", "tomli", "virtualenv (>=13.0.0)", "wheel"]
 
 [[package]]
+name = "simpleeval"
+version = "0.9.13"
+description = "A simple, safe single expression evaluator library."
+optional = false
+python-versions = "*"
+files = [
+    {file = "simpleeval-0.9.13-py2.py3-none-any.whl", hash = "sha256:22a2701a5006e4188d125d34accf2405c2c37c93f6b346f2484b6422415ae54a"},
+    {file = "simpleeval-0.9.13.tar.gz", hash = "sha256:4a30f9cc01825fe4c719c785e3762623e350c4840d5e6855c2a8496baaa65fac"},
+]
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -5065,4 +5076,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8.1,<4"
-content-hash = "0ac1b7229a47422010044d9fc525b24610cd3079c070a3696bf363cfb0bbce7f"
+content-hash = "4e171e787656e09e9fcc359c547c1dd4c61dc79674e9d5b55eedf3059cf7a92b"

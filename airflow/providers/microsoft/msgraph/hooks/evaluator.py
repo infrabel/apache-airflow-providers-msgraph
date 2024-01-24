@@ -25,6 +25,7 @@ import re
 from typing import TYPE_CHECKING
 
 from dacite import from_dict
+from simpleeval import SimpleEval
 
 if TYPE_CHECKING:
     from airflow.providers.microsoft.msgraph import CLIENT_TYPE
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
 class ExpressionEvaluator:
     attributes_pattern = re.compile(r"\.(?![^\(]*\))")
-    attribute_pattern = re.compile(r'["\']([^"\']*)["\']')
+    attribute_pattern = re.compile(r"^(\w+)(?:\(([^)]*)\))?(?:\[([^\]]*)\])?$")
 
     def __init__(self, client: CLIENT_TYPE):
         self.client = client
@@ -40,17 +41,24 @@ class ExpressionEvaluator:
     def get_argument(self, arg):
         if isinstance(arg, ast.Dict):
             return ast.literal_eval(arg)
-        return self.attribute_pattern.sub(lambda match: match.group(1), arg.value)
+        return arg.value
 
     def get_arguments(self, attribute: str):
-        if "(" in attribute and ")" in attribute:
-            method_name, raw_args = attribute.split("(")
-            args = [
-                self.get_argument(arg)
-                for arg in ast.parse(f"dummy({raw_args[:-1]})").body[0].value.args
-            ]
-            return method_name, args
-        return attribute, None
+        match = self.attribute_pattern.match(attribute)
+        if match:
+            method_name = match.group(1)
+            raw_args = match.group(2)
+            accessor = match.group(3)
+            if raw_args is not None:
+                if raw_args:
+                    args = [
+                        self.get_argument(arg)
+                        for arg in ast.parse(f"dummy({raw_args})").body[0].value.args
+                    ]
+                    return method_name, args, accessor
+                return method_name, [], accessor
+            return method_name, None, accessor
+        return attribute, None, None
 
     def evaluate_arguments(self, target, method, args):
         inner_types = dict(target.__class__.__dict__)
@@ -68,8 +76,7 @@ class ExpressionEvaluator:
                 args[index] = from_dict(data_class=param_type, data=args[index])
         return args
 
-    def invoke(self, target, attribute: str):
-        method_name, args = self.get_arguments(attribute)
+    def invoke(self, args, method_name, target):
         if args is not None:
             if len(args) > 0:
                 method = getattr(target, method_name)
@@ -83,8 +90,12 @@ class ExpressionEvaluator:
         target = self.client
 
         for attribute in attributes[:-1]:
-            target = self.invoke(target, attribute)
+            method_name, args, accessor = self.get_arguments(attribute)
+            target = self.invoke(args, method_name, target)
 
-        result = await self.invoke(target, attributes[-1])
+        method_name, args, accessor = self.get_arguments(attributes[-1])
+        result = await self.invoke(args, method_name, target)
 
+        if accessor:
+            result = SimpleEval(names={"result": result}).eval(f"result[{accessor}]")
         return result
