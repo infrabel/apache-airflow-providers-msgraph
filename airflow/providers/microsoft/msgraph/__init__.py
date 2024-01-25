@@ -36,7 +36,7 @@ CLIENT_TYPE: TypeVar = TypeVar(
 def get_provider_info():
     # Specification: https://github.com/apache/airflow/blob/main/airflow/provider_info.schema.json
     return {
-        "package-name": "airflow-provider-infrabel-msgraph",
+        "package-name": "apache-airflow-providermsgraph",
         "name": "Airflow Provider Microsoft Graph API Operators",
         "description": "Airflow provider package for Microsoft Graph API Operators.",
         "versions": [__version__],
