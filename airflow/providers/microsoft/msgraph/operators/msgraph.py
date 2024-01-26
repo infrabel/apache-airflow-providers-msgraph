@@ -79,8 +79,8 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         self.expression = expression
         self.conn_id = conn_id
         self.key = key
-        self.trigger_dag_ids = trigger_dag_ids or []
-        self.trigger_dag_ids.append(trigger_dag_id) if trigger_dag_id else None
+        self.trigger_dag_ids = set(trigger_dag_ids) if trigger_dag_ids else set()
+        self.trigger_dag_ids.add(trigger_dag_id) if trigger_dag_id else None
         self.timeout = timeout
         self.proxies = proxies
         self.api_version = api_version
