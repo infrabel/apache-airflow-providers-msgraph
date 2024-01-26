@@ -1,13 +1,16 @@
 import json
+from datetime import datetime
 from os.path import join, dirname
-from typing import Iterable, Dict, Type
+from typing import Iterable, Dict, Type, Any, Optional, Union
 
 import httpx
 import msgraph
 from airflow.configuration import AirflowConfigParser
-from airflow.models import Connection
+from airflow.models import Connection, TaskInstance
 from airflow.providers.microsoft.msgraph import CLIENT_TYPE
 from airflow.providers.microsoft.msgraph.hooks.msgraph import MSGraphSDKHook
+from airflow.utils.session import NEW_SESSION
+from airflow.utils.xcom import XCOM_RETURN_KEY
 from azure import identity
 from httpx import Timeout
 from kiota_abstractions.authentication import AuthenticationProvider
@@ -16,6 +19,7 @@ from kiota_authentication_azure import azure_identity_authentication_provider
 from mockito import mock, when
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph_core import GraphClientFactory, APIVersion
+from sqlalchemy.orm.session import Session
 
 VERSION = "1.0.2"
 AirflowConfigParser().load_test_config()
@@ -86,6 +90,10 @@ def mock_client(config: Dict = {}, api_version: APIVersion = APIVersion.v1) -> m
     return graph_service_client
 
 
+async def return_async(value):
+    return value
+
+
 def get_airflow_connection(conn_id: str, api_version: APIVersion = APIVersion.v1):
     return Connection(
         schema="https",
@@ -97,3 +105,31 @@ def get_airflow_connection(conn_id: str, api_version: APIVersion = APIVersion.v1
         password="client_secret",
         extra={"tenant_id": "tenant-id", "api_version": api_version.value},
     )
+
+
+class MockedTaskInstance(TaskInstance):
+    values = {}
+
+    def xcom_pull(
+        self,
+        task_ids: Optional[Union[Iterable[str], str]] = None,
+        dag_id: Optional[str] = None,
+        key: str = XCOM_RETURN_KEY,
+        include_prior_dates: bool = False,
+        session: Session = NEW_SESSION,
+        *,
+        map_indexes: Optional[Union[Iterable[int], int]] = None,
+        default: Optional[Any] = None,
+    ) -> Any:
+        self.task_id = task_ids
+        self.dag_id = dag_id
+        return self.values.get(f"{task_ids}_{dag_id}_{key}")
+
+    def xcom_push(
+        self,
+        key: str,
+        value: Any,
+        execution_date: Optional[datetime] = None,
+        session: Session = NEW_SESSION,
+    ) -> None:
+        self.values[f"{self.task_id}_{self.dag_id}_{key}"] = value

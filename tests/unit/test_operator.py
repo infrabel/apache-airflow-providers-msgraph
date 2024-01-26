@@ -9,7 +9,7 @@ from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyn
 from airflow.providers.microsoft.msgraph.triggers.msgraph import MSGraphSDKEvaluateTrigger
 from airflow.timetables.simple import NullTimetable
 from airflow.triggers.base import TriggerEvent
-from airflow.utils.state import DagRunState
+from airflow.utils.state import DagRunState, TaskInstanceState
 from assertpy import assert_that
 from kiota_serialization_json.json_parse_node import JsonParseNode
 from mockito import mock, when, ANY
@@ -23,14 +23,11 @@ from msgraph_beta.generated.drives.item.items.items_request_builder import Items
 from msgraph_beta.generated.drives.item.root.content.content_request_builder import ContentRequestBuilder
 
 from tests.unit.base import BaseTestCase
-from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file
+from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file, MockedTaskInstance, \
+    return_async
 
 
 class MSGraphSDKOperatorTestCase(BaseTestCase):
-    @staticmethod
-    async def mock_get(value):
-        return value
-
     @staticmethod
     async def run_tigger(trigger: MSGraphSDKEvaluateTrigger) -> List[TriggerEvent]:
         events = []
@@ -39,11 +36,12 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         return events
 
     def execute_operator(self, operator: Operator) -> Tuple[Any,Any]:
-        result = None
+        task_instance = MockedTaskInstance(task=operator, run_id="run_id", state=TaskInstanceState.RUNNING)
+        context = {"ti": task_instance}
         triggered_events = []
 
         with self.assertRaises(TaskDeferred) as deferred:
-            operator.execute(context={})
+            operator.execute(context=context)
 
         while deferred.exception:
             events = self._loop.run_until_complete(self.run_tigger(deferred.exception.trigger))
@@ -54,7 +52,8 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             triggered_events.extend(events)
 
             try:
-                result = operator.execute_complete(context={}, event=next(iter(events)).payload)
+                method = getattr(operator, deferred.exception.method_name)
+                result = method(context=context, event=next(iter(events)).payload)
                 deferred.exception = None
             except TaskDeferred as exception:
                 deferred.exception = exception
@@ -72,29 +71,29 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             next_response = JsonParseNode(next_users).get_object_value(
                 DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(self.mock_get(response))
+            when(delta_request_builder).get().thenReturn(return_async(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
             request_adapter = mock_client({"users": users_request_builder}).request_adapter
             when(request_adapter).send_async(
                 request_info=ANY,
                 parsable_factory=mockito.eq(DeltaGetResponse),
                 error_map=ANY,
-            ).thenReturn(self.mock_get(next_response))
+            ).thenReturn(return_async(next_response))
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
                 expression="users.delta.get()",
             )
 
-            result, events = self.execute_operator(operator)
+            results, events = self.execute_operator(operator)
 
-            assert_that(result).is_length(2)
-            assert_that(result[0]).is_type_of(dict)
-            assert_that(result[0]).contains_entry({"@odata.context":
-                                                   "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
-            assert_that(result[1]).is_type_of(dict)
-            assert_that(result[1]).contains_entry({"@odata.context":
-                                                  "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
+            assert_that(results).is_length(2)
+            assert_that(results[0]).is_type_of(dict)
+            assert_that(results[0]).contains_entry({"@odata.context":
+                                                    "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
+            assert_that(results[1]).is_type_of(dict)
+            assert_that(results[1]).contains_entry({"@odata.context":
+                                                    "https://graph.microsoft.com/v1.0/$metadata#users(displayName,description,mailNickname)"})
             assert_that(events).is_length(2)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
@@ -115,7 +114,7 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             users.pop("@odata.nextLink")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(self.mock_get(response))
+            when(delta_request_builder).get().thenReturn(return_async(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
             mock_client({"users": users_request_builder})
             operator = MSGraphSDKAsyncOperator(
@@ -125,9 +124,9 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
                 do_xcom_push=False,
             )
 
-            result, events = self.execute_operator(operator)
+            results, events = self.execute_operator(operator)
 
-            assert_that(result).is_none()
+            assert_that(results).is_type_of(dict)
             assert_that(events).is_length(1)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
@@ -175,20 +174,20 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         dag_bag.get_dag.side_effect=lambda dag_id: dag
 
         with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=get_airflow_connection), \
-             patch.object(DagBag, '__new__', return_value=dag_bag):
+            patch.object(DagBag, '__new__', return_value=dag_bag):
             users = load_json("resources", "users.json")
             next_users = load_json("resources", "next_users.json")
             response = JsonParseNode(users).get_object_value(DeltaGetResponse)
             next_response = JsonParseNode(next_users).get_object_value(DeltaGetResponse)
             delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(self.mock_get(response))
+            when(delta_request_builder).get().thenReturn(return_async(response))
             users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter =mock_client({"users": users_request_builder}).request_adapter
+            request_adapter = mock_client({"users": users_request_builder}).request_adapter
             when(request_adapter).send_async(
                 request_info=ANY,
                 parsable_factory=mockito.eq(DeltaGetResponse),
                 error_map=ANY,
-            ).thenReturn(self.mock_get(next_response))
+            ).thenReturn(return_async(next_response))
             dag_model = mock(spec=DagModel)
             mockito.patch(dag_model, "fileloc", __file__)
             when(DagModel).get_current(trigger_dag_id).thenReturn(dag_model)
@@ -200,10 +199,11 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
                 trigger_dag_id=trigger_dag_id,
             )
 
-            result, events = self.execute_operator(operator)
+            results, events = self.execute_operator(operator)
 
-            assert_that(result).is_none()
+            assert_that(results).is_none()
             assert_that(events).is_length(2)
+
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
             assert_that(events[0].payload["type"]).is_equal_to(f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
@@ -215,7 +215,6 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             assert_that(events[1].payload["response"]).is_equal_to(next_users)
 
     def test_run_when_valid_expression_which_returns_bytes(self):
-        "drives.by_drive_id('{}').items.by_drive_item_id('{}').content.get()"
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
                 side_effect=get_airflow_connection,
@@ -224,7 +223,7 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             drive_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
             drive_item_id = "100"
             content_request_builder = mock(spec=ContentRequestBuilder)
-            when(content_request_builder).get().thenReturn(self.mock_get(content))
+            when(content_request_builder).get().thenReturn(return_async(content))
             drive_item_item_request_builder = mock({"content": content_request_builder}, spec=DriveItemItemRequestBuilder)
             items_request_builder = mock( spec=ItemsRequestBuilder)
             when(items_request_builder).by_drive_item_id(drive_item_id).thenReturn(drive_item_item_request_builder)
@@ -239,9 +238,9 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
                 expression=f"drives.by_drive_id('{drive_id}').items.by_drive_item_id('{drive_item_id}').content.get()",
             )
 
-            result, events = self.execute_operator(operator)
+            results, events = self.execute_operator(operator)
 
-            assert_that(result).is_equal_to(content)
+            assert_that(results).is_equal_to(content)
             assert_that(events).is_length(1)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
