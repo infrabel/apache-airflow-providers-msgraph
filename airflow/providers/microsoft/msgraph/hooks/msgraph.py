@@ -19,34 +19,25 @@
 from __future__ import annotations
 
 import json
-from types import ModuleType
-from typing import Dict, Optional, Any, Union, TYPE_CHECKING, Tuple
+from typing import Dict, Optional, Union, TYPE_CHECKING, Tuple
 
 import httpx
-import msgraph_beta
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from airflow.models import Connection
-from airflow.providers.microsoft.msgraph import DEFAULT_CONN_NAME
-from airflow.providers.microsoft.msgraph.hooks.evaluator import ExpressionEvaluator
-from airflow.utils.module_loading import import_string
+from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES, DEFAULT_CONN_NAME
 from azure import identity
 from httpx import Timeout
-from kiota_abstractions.method import Method
 from kiota_abstractions.request_adapter import RequestAdapter
-from kiota_abstractions.request_information import RequestInformation
-from kiota_abstractions.serialization import ParsableFactory
 from kiota_authentication_azure import azure_identity_authentication_provider
 from msgraph_core import GraphClientFactory
 from msgraph_core._enums import APIVersion, NationalClouds
 
-import msgraph
-
 if TYPE_CHECKING:
-    from airflow.providers.microsoft.msgraph import CLIENT_TYPE
+    from airflow.providers.microsoft.msgraph.hooks import CLIENT_TYPE
 
 
-class MSGraphSDKHook(BaseHook):
+class GraphServiceClientHook(BaseHook):
     """
     A Microsoft Graph API interaction hook, a Wrapper around Microsoft Graph Client.
 
@@ -62,10 +53,6 @@ class MSGraphSDKHook(BaseHook):
         This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
     """
 
-    sdk_modules: Dict[APIVersion, ModuleType] = {
-        APIVersion.v1: msgraph,
-        APIVersion.beta: msgraph_beta,
-    }
     cached_clients: Dict[str, Tuple[APIVersion, CLIENT_TYPE]] = {}
 
     def __init__(
@@ -177,37 +164,12 @@ class MSGraphSDKHook(BaseHook):
             auth_provider = azure_identity_authentication_provider.AzureIdentityAuthenticationProvider(
                 credentials=credentials, scopes=scopes
             )
-            request_adapter = self.sdk_modules[api_version].GraphRequestAdapter(
+            request_adapter = SDK_MODULES[api_version].GraphRequestAdapter(
                 auth_provider=auth_provider, client=http_client
             )
-            client = self.sdk_modules[api_version].GraphServiceClient(
+            client = SDK_MODULES[api_version].GraphServiceClient(
                 request_adapter=request_adapter
             )
             self.cached_clients[self.conn_id] = (api_version, client)
         self._api_version = api_version
         return client
-
-    async def evaluate(self, expression: str) -> Any:
-        return await ExpressionEvaluator(self.get_conn()).evaluate(expression)
-
-    async def send_async(self, url: str, response_type: str) -> Any:
-        def request_information(method: Method = Method.GET) -> RequestInformation:
-            request_info = RequestInformation()
-            request_info.url = url
-            request_info.http_method = method
-            request_info.headers.try_add("Accept", "application/json;q=1")
-            return request_info
-
-        parsable_factory = import_string(response_type)
-        data_error_type = self.sdk_modules[
-            self.api_version
-        ].generated.models.o_data_errors.o_data_error.ODataError
-        error_mapping: Dict[str, ParsableFactory] = {
-            "4XX": data_error_type,
-            "5XX": data_error_type,
-        }
-        return await self.request_adapter.send_async(
-            request_info=request_information(),
-            parsable_factory=parsable_factory,
-            error_map=error_mapping,
-        )

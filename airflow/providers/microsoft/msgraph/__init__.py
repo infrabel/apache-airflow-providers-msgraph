@@ -16,21 +16,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import TypeVar
-
 # pylint: disable=W0406
-import msgraph
-import msgraph_beta
 
 # noqa: E501
 from airflow.providers.microsoft.msgraph.version import __version__
-
-DEFAULT_CONN_NAME = "msgraph_default"
-CLIENT_TYPE: TypeVar = TypeVar(
-    "CLIENT_TYPE",
-    msgraph.GraphServiceClient,  # pylint: disable=E1101
-    msgraph_beta.GraphServiceClient,  # pylint: disable=E1101
-)
 
 
 def get_provider_info():

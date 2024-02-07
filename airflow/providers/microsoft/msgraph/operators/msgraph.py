@@ -19,21 +19,34 @@
 from __future__ import annotations
 
 import json
-from contextlib import suppress
-from json import JSONDecodeError
-from typing import Dict, Optional, Any, TYPE_CHECKING, Sequence, Collection
+from io import BytesIO
+from typing import (
+    Dict,
+    Optional,
+    Any,
+    TYPE_CHECKING,
+    Sequence,
+    Collection,
+    Callable,
+    Type,
+)
 
 from airflow import AirflowException
 from airflow.api.common.trigger_dag import trigger_dag
 from airflow.exceptions import TaskDeferred
 from airflow.models import BaseOperator
-from airflow.providers.microsoft.msgraph import DEFAULT_CONN_NAME
+from airflow.providers.microsoft.msgraph.hooks import DEFAULT_CONN_NAME
+from airflow.providers.microsoft.msgraph.serialization.serializer import (
+    ResponseSerializer,
+)
 from airflow.providers.microsoft.msgraph.triggers.msgraph import (
     MSGraphSDKEvaluateTrigger,
-    MSGraphSDKAsyncSendTrigger,
+    MSGraphSDKSendAsyncTrigger,
 )
 from airflow.utils import timezone
 from airflow.utils.xcom import XCOM_RETURN_KEY
+from kiota_abstractions.request_adapter import ResponseType
+from kiota_abstractions.request_information import QueryParams
 from msgraph_core import APIVersion
 
 if TYPE_CHECKING:
@@ -58,14 +71,26 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         You can pass an enum named APIVersion which has 2 possible members v1 and beta,
         or you can pass a string which equals the enum values as "v1.0" or "beta".
         This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
+    :param result_processor: Function to further process the response from MS Graph API (default is lambda: context,
+        response: response).  When the response returned by the GraphServiceClientHook are bytes, then those will be
+        base64 encoded into a string.
+    :param serializer: Class which handles response serialization (default is ResponseSerializer).
     """
 
-    template_fields: Sequence[str] = ("expression", "conn_id", "trigger_dag_ids")
+    template_fields: Sequence[str] = ("expression", "url", "conn_id", "trigger_dag_ids")
 
     def __init__(
         self,
         *,
-        expression: Optional[str],
+        expression: Optional[str] = None,
+        url: Optional[str] = None,
+        response_type: Optional[ResponseType] = None,
+        path_parameters: Optional[Dict[str, Any]] = None,
+        url_template: Optional[str] = None,
+        method: str = "GET",
+        query_parameters: Optional[Dict[str, QueryParams]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        content: Optional[BytesIO] = None,
         conn_id: str = DEFAULT_CONN_NAME,
         key: str = XCOM_RETURN_KEY,
         trigger_dag_id: Optional[str] = None,
@@ -73,10 +98,22 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
         api_version: Optional[APIVersion] = None,
+        result_processor: Callable[
+            [Context, Any], Any
+        ] = lambda context, result: result,
+        serializer: Type[ResponseSerializer] = ResponseSerializer,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.expression = expression
+        self.url = url
+        self.response_type = response_type
+        self.path_parameters = path_parameters
+        self.url_template = url_template
+        self.method = method
+        self.query_parameters = query_parameters
+        self.headers = headers
+        self.content = content
         self.conn_id = conn_id
         self.key = key
         self.trigger_dag_ids = set(trigger_dag_ids) if trigger_dag_ids else set()
@@ -84,17 +121,40 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         self.timeout = timeout
         self.proxies = proxies
         self.api_version = api_version
+        self.result_processor = result_processor
+        self.serializer: ResponseSerializer = serializer()
         self.results = None
 
     def execute(self, context: Context) -> None:
-        self.log.info("Executing expression: '%s'", self.expression)
+        if self.expression:
+            self.log.info("Executing expression: '%s'", self.expression)
+            self.defer(
+                trigger=MSGraphSDKEvaluateTrigger(
+                    expression=self.expression,
+                    conn_id=self.conn_id,
+                    timeout=self.timeout,
+                    proxies=self.proxies,
+                    api_version=self.api_version,
+                    serializer=type(self.serializer),
+                ),
+                method_name="execute_complete",
+            )
+        self.log.info("Executing url '%s' as '%s'", self.url, self.method)
         self.defer(
-            trigger=MSGraphSDKEvaluateTrigger(
-                expression=self.expression,
+            trigger=MSGraphSDKSendAsyncTrigger(
+                url=self.url,
+                response_type=self.response_type,
+                path_parameters=self.path_parameters,
+                url_template=self.url_template,
+                method=self.method,
+                query_parameters=self.query_parameters,
+                headers=self.headers,
+                content=self.content,
                 conn_id=self.conn_id,
                 timeout=self.timeout,
                 proxies=self.proxies,
                 api_version=self.api_version,
+                serializer=type(self.serializer),
             ),
             method_name="execute_complete",
         )
@@ -109,6 +169,8 @@ class MSGraphSDKAsyncOperator(BaseOperator):
         Relies on trigger to throw an exception, otherwise it assumes execution was
         successful.
         """
+        self.log.debug("context: %s", context)
+
         if event:
             self.log.info(
                 "%s completed with %s: %s", self.task_id, event.get("status"), event
@@ -122,10 +184,13 @@ class MSGraphSDKAsyncOperator(BaseOperator):
             self.log.info("response: %s", response)
 
             if response:
-                response = self.parse_response(response)
+                self.log.debug("response type: %s", type(response))
+
+                response = self.serializer.deserialize(response)
                 event["response"] = response
 
-                self.log.info("trigger_dag_ids: %s", self.trigger_dag_ids)
+                self.log.debug("parsed response type: %s", type(response))
+                self.log.debug("trigger_dag_ids: %s", self.trigger_dag_ids)
 
                 if self.trigger_dag_ids:
                     self.push_xcom(context=context, value=response)
@@ -137,23 +202,46 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                             event, response, method_name="pull_execute_complete"
                         )
                     except TaskDeferred as exception:
-                        if isinstance(self.results, list):
-                            self.results.append(response)
-                        else:
-                            self.results = [response]
+                        self.append_result(
+                            context=context,
+                            value=response,
+                            append_result_as_list_if_absent=True,
+                        )
                         self.push_xcom(context=context, value=self.results)
                         raise exception
 
-                    if isinstance(self.results, list):
-                        self.results.append(response)
-                    else:
-                        self.results = response
-                    self.log.info("results: %s", self.results)
+                    self.append_result(context=context, value=response)
+                    self.log.debug("results: %s", self.results)
+
                     return self.results
         return None
 
+    def append_result(
+        self,
+        context: Context,
+        value: Any,
+        append_result_as_list_if_absent: bool = False,
+    ):
+        result = self.result_processor(context, value)
+
+        self.log.debug("result: %s", result)
+
+        if isinstance(self.results, list):
+            if isinstance(result, list):
+                self.results.extend(result)
+            else:
+                self.results.append(result)
+        else:
+            if append_result_as_list_if_absent:
+                if isinstance(result, list):
+                    self.results = result
+                else:
+                    self.results = [result]
+            else:
+                self.results = result
+
     def push_xcom(self, context: Context, value) -> None:
-        self.log.info("do_xcom_push: %s", self.do_xcom_push)
+        self.log.debug("do_xcom_push: %s", self.do_xcom_push)
         if self.do_xcom_push:
             self.log.info("Pushing xcom with key '%s': %s", self.key, value)
             self.xcom_push(context=context, key=self.key, value=value)
@@ -191,9 +279,10 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 dag_id=trigger_dag_id,
                 conf=conf,
                 execution_date=timezone.utcnow(),
+                replace_microseconds=False,  # Do not replace microseconds as execution_date is part of unique_key
             )
 
-            self.log.info("Dag %s was triggered: %s", trigger_dag_id, dag_run)
+            self.log.debug("Dag %s was triggered: %s", trigger_dag_id, dag_run)
 
     def trigger_next_link(
         self, event, response, method_name="execute_complete"
@@ -202,25 +291,19 @@ class MSGraphSDKAsyncOperator(BaseOperator):
             odata_next_link = response.get("@odata.nextLink")
             response_type = event.get("type")
 
-            self.log.info("odata_next_link: %s", odata_next_link)
-            self.log.info("response_type: %s", response_type)
+            self.log.debug("odata_next_link: %s", odata_next_link)
+            self.log.debug("response_type: %s", response_type)
 
             if odata_next_link and response_type:
                 self.defer(
-                    trigger=MSGraphSDKAsyncSendTrigger(
+                    trigger=MSGraphSDKSendAsyncTrigger(
                         url=odata_next_link,
                         response_type=response_type,
                         conn_id=self.conn_id,
                         timeout=self.timeout,
                         proxies=self.proxies,
                         api_version=self.api_version,
+                        serializer=type(self.serializer),
                     ),
                     method_name=method_name,
                 )
-
-    @classmethod
-    def parse_response(cls, response):
-        if isinstance(response, str):
-            with suppress(JSONDecodeError):
-                response = json.loads(response)
-        return response

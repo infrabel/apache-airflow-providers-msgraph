@@ -2,7 +2,8 @@ import msgraph
 import msgraph_beta
 from airflow.providers.microsoft.msgraph.hooks.evaluator import ExpressionEvaluator
 from assertpy import assert_that
-from mockito import mock, when
+from kiota_abstractions.request_adapter import RequestAdapter
+from mockito import mock, when, ANY, eq
 from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuilder
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 from msgraph_beta.generated.models.base_item_collection_response import BaseItemCollectionResponse
@@ -13,18 +14,14 @@ from msgraph_beta.generated.sites.item.site_item_request_builder import SiteItem
 from msgraph_beta.generated.sites.sites_request_builder import SitesRequestBuilder
 
 from tests.unit.base import BaseTestCase
-from tests.unit.conftest import load_json
+from tests.unit.conftest import load_json, return_async
 
 
 class ExpressionEvaluatorTestCase(BaseTestCase):
-    @staticmethod
-    async def mock_get(value):
-        return value
-
     def test_evaluate_when_expression_is_valid(self):
         users = load_json("resources", "users.json")
         delta_request_builder = mock(spec=DeltaRequestBuilder)
-        when(delta_request_builder).get().thenReturn(self.mock_get(users))
+        when(delta_request_builder).get().thenReturn(return_async(users))
         users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
         client = mock({"users": users_request_builder}, spec=msgraph.GraphServiceClient)
 
@@ -46,7 +43,7 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         site_id = "accinfrabel.sharepoint.com:/sites/news"
         site = load_json("resources", "site.json")
         site_item_request_builder = mock(spec=SiteItemRequestBuilder)
-        when(site_item_request_builder).get().thenReturn(self.mock_get(site))
+        when(site_item_request_builder).get().thenReturn(return_async(site))
         sites_request_builder = mock(spec=SitesRequestBuilder)
         when(sites_request_builder).by_site_id(site_id).thenReturn(site_item_request_builder)
         client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
@@ -59,7 +56,7 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         site_id = "accinfrabel.sharepoint.com,dab36736-0b47-44c1-9543-3688bd792230,1b30fecf-4330-4899-b249-104c2afaf9ed"
         site = load_json("resources", "site.json")
         site_item_request_builder = mock(spec=SiteItemRequestBuilder)
-        when(site_item_request_builder).get().thenReturn(self.mock_get(site))
+        when(site_item_request_builder).get().thenReturn(return_async(site))
         sites_request_builder = mock(spec=SitesRequestBuilder)
         when(sites_request_builder).by_site_id(site_id).thenReturn(site_item_request_builder)
         client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
@@ -77,6 +74,24 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         assert_that(args).is_length(2).contains_only(site_id)
         assert_that(accessor).is_none()
 
+    def test_get_arguments_with_one_dictionary(self):
+        client = mock(spec=msgraph_beta.GraphServiceClient)
+        method_name, args, accessor = ExpressionEvaluator(client=client).get_arguments("get({'query_parameters': {'expand': ['fields'], 'filter': 'createdDateTime ge 2024-01-01T23:59:59.0000000Z'}})")
+
+        assert_that(method_name).is_equal_to("get")
+        assert_that(args).is_equal_to([{'query_parameters': {'expand': ['fields'], 'filter': 'createdDateTime ge 2024-01-01T23:59:59.0000000Z'}}])
+        assert_that(accessor).is_none()
+
+    def test_invoke_with_args_containing_one_dictionary(self):
+        request_adapter = mock(spec=RequestAdapter)
+        when(request_adapter).send_async(ANY, eq(BaseItemCollectionResponse), ANY).thenReturn(return_async([]))
+        target = ItemsRequestBuilder(request_adapter=request_adapter)
+        args = [{'query_parameters': {'expand': ['fields'], 'filter': 'createdDateTime ge 2024-01-01T23:59:59.0000000Z'}}]
+        client = mock(spec=msgraph_beta.GraphServiceClient)
+        actual = self._loop.run_until_complete(ExpressionEvaluator(client=client).invoke(args, "get", target))
+
+        assert_that(actual).is_empty()
+
     def test_evaluate_when_expression_with_dict_as_parameter_should_become_dataclass(self):
         site_id = "accinfrabel.sharepoint.com,dab36736-0b47-44c1-9543-3688bd792230,1b30fecf-4330-4899-b249-104c2afaf9ed"
         list_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
@@ -84,9 +99,9 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         lists_request_builder = mock(spec=ListsRequestBuilder)
         items = mock(spec=ItemsRequestBuilder)
         request_configuration = ItemsRequestBuilder.ItemsRequestBuilderGetRequestConfiguration(
-            query_parameters=ItemsRequestBuilder.ItemsRequestBuilderGetQueryParameters(expand=["fields"])
+            query_parameters=ItemsRequestBuilder.ItemsRequestBuilderGetQueryParameters(expand=["fields"], filter="createdDateTime ge 2024-01-01T23:59:59.0000000Z")
         )
-        when(items).get(request_configuration).thenReturn(self.mock_get([item]))
+        when(items).get(request_configuration).thenReturn(return_async([item]))
         lists_item_request_builder = mock({"items": items}, spec=ListItemRequestBuilder)
         when(lists_request_builder).by_list_id(list_id).thenReturn(lists_item_request_builder)
         site_item_request_builder = mock({"lists": lists_request_builder}, spec=SiteItemRequestBuilder)
@@ -94,7 +109,7 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         when(sites_request_builder).by_site_id(site_id).thenReturn(site_item_request_builder)
         client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
 
-        actual = self._loop.run_until_complete(ExpressionEvaluator(client=client).evaluate(f"sites.by_site_id('{site_id}').lists.by_list_id('{list_id}').items.get({{'query_parameters': {{'expand': ['fields']}}}})"))
+        actual = self._loop.run_until_complete(ExpressionEvaluator(client=client).evaluate(f"sites.by_site_id('{site_id}').lists.by_list_id('{list_id}').items.get({{'query_parameters': {{'expand': ['fields'], 'filter': \"createdDateTime ge 2024-01-01T23:59:59.0000000Z\"}}}})"))
 
         assert_that(actual).contains_only(item)
 
@@ -102,7 +117,7 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
         site_id = "accinfrabel.sharepoint.com,dab36736-0b47-44c1-9543-3688bd792230,1b30fecf-4330-4899-b249-104c2afaf9ed"
         site = load_json("resources", "site.json")
         site_item_request_builder = mock(spec=SiteItemRequestBuilder)
-        when(site_item_request_builder).get().thenReturn(self.mock_get(site))
+        when(site_item_request_builder).get().thenReturn(return_async(site))
         sites_request_builder = mock(spec=SitesRequestBuilder)
         when(sites_request_builder).by_site_id(site_id).thenReturn(site_item_request_builder)
         client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
@@ -114,7 +129,7 @@ class ExpressionEvaluatorTestCase(BaseTestCase):
     def test_evaluate_when_expression_which_has_accessor_on_list(self):
         site = load_json("resources", "site.json")
         sites_request_builder = mock(spec=SitesRequestBuilder)
-        when(sites_request_builder).get().thenReturn(self.mock_get([site]))
+        when(sites_request_builder).get().thenReturn(return_async([site]))
         client = mock({"sites": sites_request_builder}, spec=msgraph_beta.GraphServiceClient)
 
         actual = self._loop.run_until_complete(ExpressionEvaluator(client=client).evaluate("sites.get()[-1]"))

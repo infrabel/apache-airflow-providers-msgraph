@@ -21,9 +21,9 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
-import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+import regex
 from dacite import from_dict
 from simpleeval import SimpleEval
 
@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 
 
 class ExpressionEvaluator:
-    attributes_pattern = re.compile(r"\.(?![^\(]*\))")
-    attribute_pattern = re.compile(r"^(\w+)(?:\(([^)]*)\))?(?:\[([^\]]*)\])?$")
+    attributes_pattern = regex.compile(r"\.(?![^\(]*\))")
+    attribute_pattern = regex.compile(r"(\w+)\s*\(([^()]*((?:(?R)|[^()]+)*)+)\)")
 
     def __init__(self, client: CLIENT_TYPE):
         self.client = client
@@ -48,7 +48,7 @@ class ExpressionEvaluator:
         if match:
             method_name = match.group(1)
             raw_args = match.group(2)
-            accessor = match.group(3)
+            accessor = self.get_accessor(attribute, method_name, raw_args)
             if raw_args is not None:
                 if raw_args:
                     args = [
@@ -59,6 +59,15 @@ class ExpressionEvaluator:
                 return method_name, [], accessor
             return method_name, None, accessor
         return attribute, None, None
+
+    def get_accessor(
+        self, attribute: str, method_name: str, raw_args: str
+    ) -> Optional[str]:
+        method_name_with_args = f"{method_name}({raw_args})"
+        if attribute.startswith(method_name_with_args):
+            accessor = attribute.replace(f"{method_name}({raw_args})", "")
+            return accessor if accessor else None
+        return None
 
     def evaluate_arguments(self, target, method, args):
         inner_types = dict(target.__class__.__dict__)
@@ -97,5 +106,5 @@ class ExpressionEvaluator:
         result = await self.invoke(args, method_name, target)
 
         if accessor:
-            result = SimpleEval(names={"result": result}).eval(f"result[{accessor}]")
+            result = SimpleEval(names={"result": result}).eval(f"result{accessor}")
         return result

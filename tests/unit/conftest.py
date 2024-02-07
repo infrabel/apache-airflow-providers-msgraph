@@ -7,15 +7,14 @@ import httpx
 import msgraph
 from airflow.configuration import AirflowConfigParser
 from airflow.models import Connection, TaskInstance
-from airflow.providers.microsoft.msgraph import CLIENT_TYPE
-from airflow.providers.microsoft.msgraph.hooks.msgraph import MSGraphSDKHook
+from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES, CLIENT_TYPE
 from airflow.utils.session import NEW_SESSION
 from airflow.utils.xcom import XCOM_RETURN_KEY
 from azure import identity
 from httpx import Timeout
 from kiota_abstractions.authentication import AuthenticationProvider
-from kiota_abstractions.request_adapter import RequestAdapter
 from kiota_authentication_azure import azure_identity_authentication_provider
+from kiota_http.httpx_request_adapter import HttpxRequestAdapter
 from mockito import mock, when
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph_core import GraphClientFactory, APIVersion
@@ -31,8 +30,8 @@ def load_json(*locations: Iterable[str]):
         return json.load(file)
 
 
-def load_file(*locations: Iterable[str]):
-    with open(join(dirname(__file__), join(*locations)), encoding="utf-8") as file:
+def load_file(*locations: Iterable[str], mode="r", encoding="utf-8"):
+    with open(join(dirname(__file__), join(*locations)), mode=mode, encoding=encoding) as file:
         return file.read()
 
 
@@ -69,16 +68,16 @@ def mock_auth_provider() -> AuthenticationProvider:
     return auth_provider
 
 
-def mock_request_adapter(auth_provider: AuthenticationProvider, httpx_client: httpx.AsyncClient, api_version: APIVersion = APIVersion.v1):
-    request_adapter = mock({"base_url": "https://graph.microsoft.com"}, spec=RequestAdapter)
-    when(MSGraphSDKHook.sdk_modules[api_version]).GraphRequestAdapter(auth_provider=auth_provider, client=httpx_client).thenReturn(request_adapter)
+def mock_request_adapter(auth_provider: AuthenticationProvider, httpx_client: httpx.AsyncClient, api_version: APIVersion = APIVersion.v1) -> HttpxRequestAdapter:
+    request_adapter = mock({"base_url": "https://graph.microsoft.com"}, spec=HttpxRequestAdapter)
+    when(SDK_MODULES[api_version]).GraphRequestAdapter(auth_provider=auth_provider, client=httpx_client).thenReturn(request_adapter)
     return request_adapter
 
 
 def mock_graph_service_client(request_adapter: msgraph.GraphRequestAdapter, config: Dict = {}, api_version: APIVersion = APIVersion.v1) -> CLIENT_TYPE:
     graph_service_client = mock(config_or_spec={**{"request_adapter": request_adapter}, **config},
-                                spec=MSGraphSDKHook.sdk_modules[api_version].GraphServiceClient)
-    when(MSGraphSDKHook.sdk_modules[api_version]).GraphServiceClient(request_adapter=request_adapter).thenReturn(graph_service_client)
+                                spec=SDK_MODULES[api_version].GraphServiceClient)
+    when(SDK_MODULES[api_version]).GraphServiceClient(request_adapter=request_adapter).thenReturn(graph_service_client)
     return graph_service_client
 
 
