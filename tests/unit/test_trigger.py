@@ -2,6 +2,8 @@ import locale
 from base64 import b64encode
 from unittest.mock import patch
 
+import msgraph.generated.models.o_data_errors.o_data_error
+import msgraph_beta
 from airflow.providers.microsoft.msgraph.triggers.msgraph import MSGraphSDKEvaluateTrigger, MSGraphSDKSendAsyncTrigger
 from airflow.triggers.base import TriggerEvent
 from assertpy import assert_that
@@ -15,6 +17,7 @@ from msgraph.generated.users.users_request_builder import UsersRequestBuilder
 from msgraph_beta.generated.models.site import Site
 from msgraph_beta.generated.sites.item.site_item_request_builder import SiteItemRequestBuilder
 from msgraph_beta.generated.sites.sites_request_builder import SitesRequestBuilder
+from msgraph_core import APIVersion
 from opentelemetry.trace import Span
 
 from tests.unit.base import BaseTestCase
@@ -150,7 +153,6 @@ class MSGraphSDKTriggerTestCase(BaseTestCase):
             assert_that(actual.payload["response"]).is_type_of(str)
             assert_that(actual.payload["response"]).is_equal_to(base64_encoded_content)
 
-
     def test_serialize(self):
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
@@ -178,3 +180,28 @@ class MSGraphSDKTriggerTestCase(BaseTestCase):
                 "api_version": "v1.0",
                 "serializer": "airflow.providers.microsoft.msgraph.serialization.serializer.ResponseSerializer"
             })
+
+    def test_data_error_type(self):
+        with (patch(
+                "airflow.hooks.base.BaseHook.get_connection",
+                side_effect=get_airflow_connection,
+        )):
+            trigger = MSGraphSDKSendAsyncTrigger(response_type="bytes", conn_id="msgraph_api")
+
+            actual = trigger.data_error_type
+
+            assert_that(actual).is_equal_to(msgraph.generated.models.o_data_errors.o_data_error.ODataError)
+
+    def test_data_error_type_when_beta(self):
+        with (patch(
+                "airflow.hooks.base.BaseHook.get_connection",
+                side_effect=get_airflow_connection,
+        )):
+            trigger = MSGraphSDKSendAsyncTrigger(response_type="bytes", conn_id="msgraph_api", api_version=APIVersion.beta)
+
+            actual = trigger.data_error_type
+
+            assert_that(actual).is_equal_to(msgraph_beta.generated.models.o_data_errors.o_data_error.ODataError)
+
+
+

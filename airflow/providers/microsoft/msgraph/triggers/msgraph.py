@@ -24,8 +24,11 @@ from functools import cached_property
 from io import BytesIO
 from typing import Dict, Optional, Any, AsyncIterator, Sequence, Union, Type
 
-from airflow.providers.microsoft.msgraph.hooks import DEFAULT_CONN_NAME, CLIENT_TYPE
-from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES
+from airflow.providers.microsoft.msgraph.hooks import (
+    DEFAULT_CONN_NAME,
+    CLIENT_TYPE,
+    ODATA_ERROR_TYPE,
+)
 from airflow.providers.microsoft.msgraph.hooks.evaluator import ExpressionEvaluator
 from airflow.providers.microsoft.msgraph.hooks.msgraph import GraphServiceClientHook
 from airflow.providers.microsoft.msgraph.serialization.serializer import (
@@ -277,11 +280,18 @@ class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
         }
         return name, fields
 
+    def normalize_url(self) -> str:
+        if self.url.startswith("/"):
+            return self.url.replace("/", "", 1)
+        return self.url
+
     def request_information(self) -> RequestInformation:
         request_information = RequestInformation()
-        request_information.url = self.url
+        if self.url.startswith("http"):
+            request_information.url = self.url
+        else:
+            request_information.url_template = f"{{+baseurl}}/{self.normalize_url()}"
         request_information.path_parameters = self.path_parameters or {}
-        request_information.url_template = self.url_template
         request_information.http_method = Method(self.method.strip().upper())
         request_information.query_parameters = self.query_parameters or {}
         request_information.content = self.content
@@ -298,9 +308,7 @@ class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
 
     @cached_property
     def data_error_type(self) -> ParsableFactory:
-        return SDK_MODULES[
-            self.api_version
-        ].generated.models.o_data_errors.o_data_error.ODataError
+        return ODATA_ERROR_TYPE[self.api_version]
 
     def error_mapping(self) -> Dict[str, Optional[ParsableFactory]]:
         return {
@@ -310,7 +318,7 @@ class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
 
     def get_parsable_factory(self) -> Optional[Union[ParsableFactory, str]]:
         if self.response_type:
-            with suppress(ImportError):
+            with suppress(ImportError, TypeError):
                 parsable_factory = import_string(self.response_type)
                 if issubclass(parsable_factory, Parsable):
                     return parsable_factory

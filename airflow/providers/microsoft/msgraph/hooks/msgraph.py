@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from typing import Dict, Optional, Union, TYPE_CHECKING, Tuple
+from urllib.parse import urljoin
 
 import httpx
 from airflow.exceptions import AirflowException
@@ -88,17 +89,17 @@ class GraphServiceClientHook(BaseHook):
         )
 
     def get_api_version(self, config: Dict) -> APIVersion:
-        api_version = config.get("api_version", self._api_version)
-
-        return self.resolve_api_version_from_value(
-            api_version=api_version, default=APIVersion.v1
-        )
+        if self._api_version is None:
+            return self.resolve_api_version_from_value(
+                api_version=config.get("api_version"), default=APIVersion.v1
+            )
+        return self._api_version
 
     @staticmethod
-    def get_base_url(config: Dict, connection: Connection) -> str:
+    def get_host(connection: Connection) -> str:
         if connection.schema and connection.host:
             return f"{connection.schema}://{connection.host}"
-        return config.get("base_url", NationalClouds.Global.value)
+        return NationalClouds.Global.value
 
     @staticmethod
     def to_httpx_proxies(proxies: Dict) -> Dict:
@@ -124,7 +125,8 @@ class GraphServiceClientHook(BaseHook):
             config = connection.extra_dejson if connection.extra else {}
             tenant_id = config.get("tenant_id")
             api_version = self.get_api_version(config)
-            base_url = self.get_base_url(config, connection)
+            host = self.get_host(connection)
+            base_url = config.get("base_url", urljoin(host, api_version.value))
             proxies = self.proxies or config.get("proxies", {})
             scopes = config.get("scopes", ["https://graph.microsoft.com/.default"])
             verify = config.get("verify", True)
@@ -135,6 +137,7 @@ class GraphServiceClientHook(BaseHook):
                 api_version.value,
                 self.conn_id,
             )
+            self.log.info("Host: %s", host)
             self.log.info("Base URL: %s", base_url)
             self.log.info("Tenant id: %s", tenant_id)
             self.log.info("Client id: %s", client_id)
@@ -159,7 +162,7 @@ class GraphServiceClientHook(BaseHook):
                     verify=verify,
                     trust_env=trust_env,
                 ),
-                host=base_url,
+                host=host,
             )
             auth_provider = azure_identity_authentication_provider.AzureIdentityAuthenticationProvider(
                 credentials=credentials, scopes=scopes
@@ -167,6 +170,7 @@ class GraphServiceClientHook(BaseHook):
             request_adapter = SDK_MODULES[api_version].GraphRequestAdapter(
                 auth_provider=auth_provider, client=http_client
             )
+            request_adapter.base_url = base_url
             client = SDK_MODULES[api_version].GraphServiceClient(
                 request_adapter=request_adapter
             )

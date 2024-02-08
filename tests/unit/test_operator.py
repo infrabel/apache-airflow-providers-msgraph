@@ -11,16 +11,12 @@ from airflow.timetables.simple import NullTimetable
 from airflow.triggers.base import TriggerEvent
 from airflow.utils.state import DagRunState
 from assertpy import assert_that
+from kiota_abstractions.request_information import RequestInformation
 from kiota_serialization_json.json_parse_node import JsonParseNode
-from mockito import mock, when, ANY
+from mockito import any, mock, when, ANY, eq
 from msgraph.generated.users.delta.delta_get_response import DeltaGetResponse
 from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuilder
 from msgraph.generated.users.users_request_builder import UsersRequestBuilder
-from msgraph_beta.generated.drives.drives_request_builder import DrivesRequestBuilder
-from msgraph_beta.generated.drives.item.drive_item_request_builder import DriveItemRequestBuilder
-from msgraph_beta.generated.drives.item.items.item.drive_item_item_request_builder import DriveItemItemRequestBuilder
-from msgraph_beta.generated.drives.item.items.items_request_builder import ItemsRequestBuilder
-from msgraph_beta.generated.drives.item.root.content.content_request_builder import ContentRequestBuilder
 
 from tests.unit.base import BaseTestCase
 from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file, return_async
@@ -177,7 +173,7 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
                 f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
             assert_that(events[1].payload["response"]).is_equal_to(next_users)
 
-    def test_run_when_valid_expression_which_returns_bytes(self):
+    def test_run_when_url_which_returns_bytes(self):
         with (patch(
                 "airflow.hooks.base.BaseHook.get_connection",
                 side_effect=get_airflow_connection,
@@ -185,21 +181,17 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             content = load_file("resources", "dummy.pdf", mode="rb", encoding=None)
             base64_encoded_content = b64encode(content).decode(locale.getpreferredencoding())
             drive_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
-            drive_item_id = "100"
-            content_request_builder = mock(spec=ContentRequestBuilder)
-            when(content_request_builder).get().thenReturn(return_async(content))
-            drive_item_item_request_builder = mock({"content": content_request_builder}, spec=DriveItemItemRequestBuilder)
-            items_request_builder = mock( spec=ItemsRequestBuilder)
-            when(items_request_builder).by_drive_item_id(drive_item_id).thenReturn(drive_item_item_request_builder)
-            drive_item_request_builder = mock({"items": items_request_builder}, spec=DriveItemRequestBuilder)
-
-            drives_request_builder = mock(spec=DrivesRequestBuilder)
-            when(drives_request_builder).by_drive_id(drive_id).thenReturn(drive_item_request_builder)
-            mock_client({"drives": drives_request_builder})
+            request_adapter = mock_client().request_adapter
+            when(request_adapter).send_primitive_async(
+                request_info=any(RequestInformation),
+                response_type=eq(bytes),
+                error_map=any(dict),
+            ).thenReturn(return_async(content))
             operator = MSGraphSDKAsyncOperator(
                 task_id="drive_item_content",
                 conn_id="msgraph_api",
-                expression=f"drives.by_drive_id('{drive_id}').items.by_drive_item_id('{drive_item_id}').content.get()",
+                response_type=bytes,
+                url=f"drives/{drive_id}/root/content",
             )
 
             results, events = self.execute_operator(operator)

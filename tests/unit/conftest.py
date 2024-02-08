@@ -15,7 +15,7 @@ from httpx import Timeout
 from kiota_abstractions.authentication import AuthenticationProvider
 from kiota_authentication_azure import azure_identity_authentication_provider
 from kiota_http.httpx_request_adapter import HttpxRequestAdapter
-from mockito import mock, when
+from mockito import any, mock, when, eq
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 from msgraph_core import GraphClientFactory, APIVersion
 from sqlalchemy.orm.session import Session
@@ -45,8 +45,8 @@ def mock_httpx_client() -> httpx.AsyncClient:
     ).thenReturn(client)
     httpx_client = mock(spec=httpx.AsyncClient)
     when(GraphClientFactory).create_with_default_middleware(
-        api_version=APIVersion.v1.value,
-        client=client,
+        api_version=any(APIVersion),
+        client=eq(client),
         host="https://graph.microsoft.com",
     ).thenReturn(httpx_client)
     return httpx_client
