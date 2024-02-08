@@ -21,8 +21,16 @@ from __future__ import annotations
 from abc import abstractmethod
 from contextlib import suppress
 from functools import cached_property
-from io import BytesIO
-from typing import Dict, Optional, Any, AsyncIterator, Sequence, Union, Type
+from typing import (
+    Dict,
+    Optional,
+    Any,
+    AsyncIterator,
+    Sequence,
+    Union,
+    Type,
+    TYPE_CHECKING,
+)
 
 from airflow.providers.microsoft.msgraph.hooks import (
     DEFAULT_CONN_NAME,
@@ -37,10 +45,16 @@ from airflow.providers.microsoft.msgraph.serialization.serializer import (
 from airflow.triggers.base import BaseTrigger, TriggerEvent
 from airflow.utils.module_loading import import_string
 from kiota_abstractions.method import Method
-from kiota_abstractions.request_adapter import ResponseType, RequestAdapter
-from kiota_abstractions.request_information import RequestInformation, QueryParams
-from kiota_abstractions.serialization import ParsableFactory, Parsable
+from kiota_abstractions.request_information import RequestInformation
+from kiota_abstractions.serialization import Parsable
 from msgraph_core import APIVersion
+
+if TYPE_CHECKING:
+    from io import BytesIO
+    from kiota_abstractions.request_adapter import RequestAdapter
+    from kiota_abstractions.request_information import QueryParams
+    from kiota_abstractions.serialization import ParsableFactory
+    from kiota_http.httpx_request_adapter import ResponseType
 
 
 class MSGraphSDKBaseTrigger(BaseTrigger):

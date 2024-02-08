@@ -5,34 +5,35 @@ line-length = 88
 [tool.flake8]
 max-line-length = 99
 extend-ignore = "E203,"
+type-checking-strict = true
 
 [tool.poetry]
-name = "apache-airflow-providers-msgraph"
+name = "airflow-provider-infrabel-msgraph"
 version = "1.0.2"
 description = "Airflow provider package for Microsoft Graph API"
 authors = ["David Blain <david.blain@infrabel.be>"]
 license = "Proprietary"
 packages = [{include = "airflow/providers/microsoft/msgraph", from = "."}]
-readme = "README.md"
-repository = "https://github.com/infrabel/apache-airflow-providers-msgraph"
 
 [tool.poetry.dependencies]
-python = ">=3.8.1,<4"
+python = ">=3.9 <=3.12"
 aiostream = "^0.5.2"
 dacite = "^1.8.1"
 simpleeval = "^0.9.13"
+regex = "^2023.10.3"
 apache-airflow = ">2.7"
-msgraph-sdk = "^1.0.0"
-msgraph-beta-sdk = "^1.0.0"
+msgraph-sdk = "^1.1.0"
+msgraph-beta-sdk = "^1.1.0"
 
 [tool.poetry.dev-dependencies]
 black = "23.3.0"
 bump2version = "^1.0.0"
 gitchangelog = "^3.0.4"
-pyproject-flake8 = "^6.1.0"
-mypy = "^1.8.0"
+pyproject-flake8 = "^5.0.4"
+flake8-type-checking = "^2.9.0"
+mypy = "^0.950"
 types-six = "^1.16.15"
-pylint = "^3.0.3"
+pylint = "^2.13.9"
 pystache = "^0.6.0"
 pytest = "^7.1.2"
 pytest-cov = "^3.0.0"
@@ -43,7 +44,9 @@ mutpy = "^0.6.1"
 coverage = "^5.5"
 assertpy = "^1.1"
 mockito = "^1.2.2"
+pydantic = "^1.10.7"
 pendulum = "^2.1.2"
+sqlalchemy = "<2.0"
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.4.8"
 mkdocs-material-extensions = "^1.3"
@@ -53,6 +56,16 @@ mkautodoc = "^0.2.0"
 
 [tool.poetry.plugins.apache_airflow_provider]
 provider_info = "airflow.providers.microsoft.msgraph.__init__:get_provider_info"
+
+[[tool.poetry.source]]
+name = "infrabel-pypi"
+url = "https://artifactory.msnet.railb.be/artifactory/api/pypi/pypi/simple/"
+default = true
+
+[[tool.poetry.source]]
+name = "artifactory"
+url = "https://artifactory.msnet.railb.be/artifactory/api/pypi/a1840-bi-pm-pypi/simple/"
+secondary = true
 
 [build-system]
 build-backend = "poetry.masonry.api"

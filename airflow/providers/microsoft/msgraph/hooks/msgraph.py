@@ -25,17 +25,17 @@ from urllib.parse import urljoin
 import httpx
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
-from airflow.models import Connection
 from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES, DEFAULT_CONN_NAME
 from azure import identity
 from httpx import Timeout
-from kiota_abstractions.request_adapter import RequestAdapter
 from kiota_authentication_azure import azure_identity_authentication_provider
 from msgraph_core import GraphClientFactory
 from msgraph_core._enums import APIVersion, NationalClouds
 
 if TYPE_CHECKING:
+    from airflow.models import Connection
     from airflow.providers.microsoft.msgraph.hooks import CLIENT_TYPE
+    from kiota_abstractions.request_adapter import RequestAdapter
 
 
 class GraphServiceClientHook(BaseHook):

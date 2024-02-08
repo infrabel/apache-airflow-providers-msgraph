@@ -19,7 +19,6 @@
 from __future__ import annotations
 
 import json
-from io import BytesIO
 from typing import (
     Dict,
     Optional,
@@ -45,12 +44,13 @@ from airflow.providers.microsoft.msgraph.triggers.msgraph import (
 )
 from airflow.utils import timezone
 from airflow.utils.xcom import XCOM_RETURN_KEY
-from kiota_abstractions.request_adapter import ResponseType
-from kiota_abstractions.request_information import QueryParams
-from msgraph_core import APIVersion
 
 if TYPE_CHECKING:
+    from msgraph_core import APIVersion
+    from io import BytesIO
     from airflow.utils.context import Context
+    from kiota_abstractions.request_adapter import ResponseType
+    from kiota_abstractions.request_information import QueryParams
 
 
 class MSGraphSDKAsyncOperator(BaseOperator):
