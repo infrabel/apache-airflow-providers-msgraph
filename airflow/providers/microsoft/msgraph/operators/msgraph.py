@@ -187,13 +187,20 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                 self.log.debug("response type: %s", type(response))
 
                 response = self.serializer.deserialize(response)
-                event["response"] = response
+
+                self.log.debug("deserialized response type: %s", type(response))
+
+                result = self.result_processor(context, response)
+
+                self.log.debug("processed response: %s", result)
+
+                event["response"] = result
 
                 self.log.debug("parsed response type: %s", type(response))
                 self.log.debug("trigger_dag_ids: %s", self.trigger_dag_ids)
 
                 if self.trigger_dag_ids:
-                    self.push_xcom(context=context, value=response)
+                    self.push_xcom(context=context, value=result)
                     self.trigger_dags()
                     self.trigger_next_link(event, response)
                 else:
@@ -204,13 +211,13 @@ class MSGraphSDKAsyncOperator(BaseOperator):
                     except TaskDeferred as exception:
                         self.append_result(
                             context=context,
-                            value=response,
+                            result=result,
                             append_result_as_list_if_absent=True,
                         )
                         self.push_xcom(context=context, value=self.results)
                         raise exception
 
-                    self.append_result(context=context, value=response)
+                    self.append_result(context=context, result=result)
                     self.log.debug("results: %s", self.results)
 
                     return self.results
@@ -219,12 +226,10 @@ class MSGraphSDKAsyncOperator(BaseOperator):
     def append_result(
         self,
         context: Context,
-        value: Any,
+        result: Any,
         append_result_as_list_if_absent: bool = False,
     ):
-        result = self.result_processor(context, value)
-
-        self.log.debug("result: %s", result)
+        self.log.debug("value: %s", result)
 
         if isinstance(self.results, list):
             if isinstance(result, list):
