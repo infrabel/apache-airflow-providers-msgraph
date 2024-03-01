@@ -25,20 +25,20 @@ from urllib.parse import urljoin
 import httpx
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
-from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES, DEFAULT_CONN_NAME
+from airflow.providers.microsoft.msgraph.hooks import DEFAULT_CONN_NAME
 from azure import identity
 from httpx import Timeout
 from kiota_authentication_azure import azure_identity_authentication_provider
+from kiota_http import httpx_request_adapter
 from msgraph_core import GraphClientFactory
 from msgraph_core._enums import APIVersion, NationalClouds
 
 if TYPE_CHECKING:
     from airflow.models import Connection
-    from airflow.providers.microsoft.msgraph.hooks import CLIENT_TYPE
     from kiota_abstractions.request_adapter import RequestAdapter
 
 
-class GraphServiceClientHook(BaseHook):
+class KiotaRequestAdapterHook(BaseHook):
     """
     A Microsoft Graph API interaction hook, a Wrapper around Microsoft Graph Client.
 
@@ -54,7 +54,7 @@ class GraphServiceClientHook(BaseHook):
         This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
     """
 
-    cached_clients: Dict[str, Tuple[APIVersion, CLIENT_TYPE]] = {}
+    cached_request_adapters: Dict[str, Tuple[APIVersion, RequestAdapter]] = {}
 
     def __init__(
         self,
@@ -67,10 +67,6 @@ class GraphServiceClientHook(BaseHook):
         self.timeout = timeout
         self.proxies = proxies
         self._api_version = self.resolve_api_version_from_value(api_version)
-
-    @property
-    def request_adapter(self) -> RequestAdapter:
-        return self.get_conn().request_adapter
 
     @property
     def api_version(self) -> APIVersion:
@@ -110,15 +106,17 @@ class GraphServiceClientHook(BaseHook):
             proxies["https://"] = proxies.pop("https")
         return proxies
 
-    def get_conn(self) -> CLIENT_TYPE:
+    def get_conn(self) -> RequestAdapter:
         if not self.conn_id:
             raise AirflowException(
                 "Failed to create Microsoft Graph SDK client. No conn_id provided!"
             )
 
-        api_version, client = self.cached_clients.get(self.conn_id, (None, None))
+        api_version, request_adapter = self.cached_request_adapters.get(
+            self.conn_id, (None, None)
+        )
 
-        if not client:
+        if not request_adapter:
             connection = self.get_connection(conn_id=self.conn_id)
             client_id = connection.login
             client_secret = connection.password
@@ -167,13 +165,11 @@ class GraphServiceClientHook(BaseHook):
             auth_provider = azure_identity_authentication_provider.AzureIdentityAuthenticationProvider(
                 credentials=credentials, scopes=scopes
             )
-            request_adapter = SDK_MODULES[api_version].GraphRequestAdapter(
-                auth_provider=auth_provider, client=http_client
+            request_adapter = httpx_request_adapter.HttpxRequestAdapter(
+                authentication_provider=auth_provider,
+                http_client=http_client,
+                base_url=base_url,
             )
-            request_adapter.base_url = base_url
-            client = SDK_MODULES[api_version].GraphServiceClient(
-                request_adapter=request_adapter
-            )
-            self.cached_clients[self.conn_id] = (api_version, client)
+            self.cached_request_adapters[self.conn_id] = (api_version, request_adapter)
         self._api_version = api_version
-        return client
+        return request_adapter

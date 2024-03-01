@@ -1,28 +1,27 @@
 import json
 from datetime import datetime
 from os.path import join, dirname
-from typing import Iterable, Dict, Type, Any, Optional, Union
+from typing import Iterable, Dict, Any, Optional, Union
 
 import httpx
-import msgraph
 from airflow.configuration import AirflowConfigParser
-from airflow.models import Connection, TaskInstance
-from airflow.providers.microsoft.msgraph.hooks import SDK_MODULES, CLIENT_TYPE
+from airflow.models import TaskInstance
 from airflow.utils.session import NEW_SESSION
 from airflow.utils.xcom import XCOM_RETURN_KEY
 from azure import identity
-from httpx import Timeout
+from httpx import Timeout, Response
 from kiota_abstractions.authentication import AuthenticationProvider
+from kiota_abstractions.request_information import RequestInformation
 from kiota_authentication_azure import azure_identity_authentication_provider
-from kiota_http.httpx_request_adapter import HttpxRequestAdapter
-from mockito import any, mock, when, eq
-from msgraph.generated.models.o_data_errors.o_data_error import ODataError
+from kiota_http import httpx_request_adapter
+from kiota_http.httpx_request_adapter import RESPONSE_HANDLER_EVENT_INVOKED_KEY, HttpxRequestAdapter
+from mockito import any, mock, when, eq, ANY
 from msgraph_core import GraphClientFactory, APIVersion
+from opentelemetry.sdk.trace import Span
 from sqlalchemy.orm.session import Session
 
 VERSION = "1.0.2"
 AirflowConfigParser().load_test_config()
-odata_error_type: Type[ODataError] = ODataError  # we need to load this type otherwise tests will fail due to dynamic loading of modules
 
 
 def load_json(*locations: Iterable[str]):
@@ -68,41 +67,60 @@ def mock_auth_provider() -> AuthenticationProvider:
     return auth_provider
 
 
-def mock_request_adapter(auth_provider: AuthenticationProvider, httpx_client: httpx.AsyncClient, api_version: APIVersion = APIVersion.v1) -> HttpxRequestAdapter:
-    request_adapter = mock({"base_url": "https://graph.microsoft.com"}, spec=HttpxRequestAdapter)
-    when(SDK_MODULES[api_version]).GraphRequestAdapter(auth_provider=auth_provider, client=httpx_client).thenReturn(request_adapter)
+def mock_request_adapter(auth_provider: AuthenticationProvider, httpx_client: httpx.AsyncClient, base_url: str = "https://graph.microsoft.com/v1.0") -> HttpxRequestAdapter:
+    request_adapter = mock({"base_url": base_url}, spec=HttpxRequestAdapter)
+    when(httpx_request_adapter).HttpxRequestAdapter(authentication_provider=auth_provider, http_client=httpx_client, base_url=base_url).thenReturn(request_adapter)
     return request_adapter
 
 
-def mock_graph_service_client(request_adapter: msgraph.GraphRequestAdapter, config: Dict = {}, api_version: APIVersion = APIVersion.v1) -> CLIENT_TYPE:
-    graph_service_client = mock(config_or_spec={**{"request_adapter": request_adapter}, **config},
-                                spec=SDK_MODULES[api_version].GraphServiceClient)
-    when(SDK_MODULES[api_version]).GraphServiceClient(request_adapter=request_adapter).thenReturn(graph_service_client)
-    return graph_service_client
-
-
-def mock_client(config: Dict = {}, api_version: APIVersion = APIVersion.v1) -> msgraph.GraphServiceClient:
+def mock_client() -> HttpxRequestAdapter:
     httpx_client = mock_httpx_client()
     auth_provider = mock_auth_provider()
-    request_adapter = mock_request_adapter(auth_provider=auth_provider, httpx_client=httpx_client, api_version=api_version)
-    graph_service_client = mock_graph_service_client(request_adapter=request_adapter, config=config, api_version=api_version)
-    return graph_service_client
+    request_adapter = mock_request_adapter(auth_provider=auth_provider, httpx_client=httpx_client)
+    return request_adapter
+
+
+def mock_send_primitive_async(request_adapter: HttpxRequestAdapter, *responses: Response, response_type: str = None):
+    when(request_adapter).send_primitive_async(
+        request_info=any(RequestInformation),
+        response_type=eq(response_type),
+        error_map=any(dict),
+    ).thenCallOriginalImplementation()
+    span = mock(spec=Span)
+    when(span).end().thenReturn(None)
+    when(span).add_event(RESPONSE_HANDLER_EVENT_INVOKED_KEY).thenReturn(None)
+    when(request_adapter).start_tracing_span(any(RequestInformation), eq("send_primitive_async")).thenReturn(span)
+    when(request_adapter).get_response_handler(any(RequestInformation)).thenCallOriginalImplementation()
+    return_values = tuple(map(return_async, responses))
+    when(request_adapter).get_http_response_message(any(RequestInformation), ANY).thenReturn(*return_values)
+    for response in responses:
+        when(request_adapter).throw_failed_responses(eq(response), any(dict), eq(span), eq(span)).thenReturn(
+            return_async(None))
+        when(request_adapter)._should_return_none(response).thenCallOriginalImplementation()
 
 
 async def return_async(value):
     return value
 
 
-def get_airflow_connection(conn_id: str, api_version: APIVersion = APIVersion.v1):
+def get_airflow_connection(
+        conn_id: str,
+        login: str = "client_id",
+        password: str = "client_secret",
+        tenant_id: str = "tenant-id",
+        proxies: Optional[Dict] = None,
+        api_version: APIVersion = APIVersion.v1):
+    from airflow.models import Connection
+
     return Connection(
         schema="https",
         conn_id=conn_id,
         conn_type="http",
         host="graph.microsoft.com",
         port="80",
-        login="client_id",
-        password="client_secret",
-        extra={"tenant_id": "tenant-id", "api_version": api_version.value},
+        login=login,
+        password=password,
+        extra={"tenant_id": tenant_id, "api_version": api_version.value, "proxies": proxies or {}},
     )
 
 

@@ -6,21 +6,12 @@ from uuid import uuid4
 import pendulum
 from airflow.providers.microsoft.msgraph.serialization.serializer import ResponseSerializer
 from assertpy import assert_that
-from kiota_serialization_json.json_parse_node import JsonParseNode
-from msgraph.generated.users.delta.delta_get_response import DeltaGetResponse
 
 from tests.unit.base import BaseTestCase
 from tests.unit.conftest import load_json, load_file
 
 
 class ResponseSerializerTestCase(BaseTestCase):
-    def test_serialize_when_parsable_type_then_json(self):
-        response = JsonParseNode(load_json("resources", "users.json")).get_object_value(DeltaGetResponse)
-
-        actual = ResponseSerializer().serialize(response)
-
-        assert_that(actual).is_type_of(str).is_equal_to(load_file("resources", "users.json"))
-
     def test_serialize_when_bytes_then_base64_encoded(self):
         response = load_file("resources", "dummy.pdf", mode="rb", encoding=None)
         content = b64encode(response).decode(locale.getpreferredencoding())

@@ -8,8 +8,6 @@ from typing import Optional, Any
 from uuid import UUID
 
 import pendulum
-from kiota_abstractions.serialization import Parsable
-from kiota_serialization_json.json_serialization_writer import JsonSerializationWriter
 
 
 class ResponseSerializer:
@@ -31,10 +29,6 @@ class ResponseSerializer:
             return None
 
         if response is not None:
-            if isinstance(response, Parsable):
-                writer = JsonSerializationWriter()
-                response.serialize(writer)
-                return json.dumps(writer.writer, default=convert)
             if isinstance(response, bytes):
                 return b64encode(response).decode(self.encoding)
             with suppress(JSONDecodeError):

@@ -1,25 +1,16 @@
 import locale
 from base64 import b64encode
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import mockito
-from airflow import DAG
 from airflow.exceptions import AirflowException
-from airflow.models import DagModel, DagBag, DagRun
 from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
-from airflow.timetables.simple import NullTimetable
 from airflow.triggers.base import TriggerEvent
-from airflow.utils.state import DagRunState
 from assertpy import assert_that
-from kiota_abstractions.request_information import RequestInformation
-from kiota_serialization_json.json_parse_node import JsonParseNode
-from mockito import any, mock, when, ANY, eq
-from msgraph.generated.users.delta.delta_get_response import DeltaGetResponse
-from msgraph.generated.users.delta.delta_request_builder import DeltaRequestBuilder
-from msgraph.generated.users.users_request_builder import UsersRequestBuilder
+from httpx import Response
+from mockito import mock, when
 
 from tests.unit.base import BaseTestCase
-from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file, return_async
+from tests.unit.conftest import load_json, mock_client, get_airflow_connection, load_file, mock_send_primitive_async
 
 
 class MSGraphSDKOperatorTestCase(BaseTestCase):
@@ -30,22 +21,16 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         )):
             users = load_json("resources", "users.json")
             next_users = load_json("resources", "next_users.json")
-            response = JsonParseNode(users).get_object_value(DeltaGetResponse)
-            next_response = JsonParseNode(next_users).get_object_value(
-                DeltaGetResponse)
-            delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(return_async(response))
-            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter = mock_client({"users": users_request_builder}).request_adapter
-            when(request_adapter).send_async(
-                request_info=ANY,
-                parsable_factory=mockito.eq(DeltaGetResponse),
-                error_map=ANY,
-            ).thenReturn(return_async(next_response))
+            request_adapter = mock_client()
+            response = mock({"status_code": 200}, spec=Response)
+            when(response).json().thenReturn(users)
+            next_response = mock({"status_code": 200}, spec=Response)
+            when(next_response).json().thenReturn(next_users)
+            mock_send_primitive_async(request_adapter, response, next_response)
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
-                expression="users.delta.get()",
+                url="users",
                 result_processor=lambda context, result: result.get("value")
             )
 
@@ -56,12 +41,11 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             assert_that(events).is_length(2)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
-            assert_that(events[0].payload["type"]).is_equal_to(f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
+            assert_that(events[0].payload["type"]).is_equal_to("builtins.dict")
             assert_that(events[0].payload["response"]).is_equal_to(users.get("value"))
             assert_that(events[1]).is_type_of(TriggerEvent)
             assert_that(events[1].payload["status"]).is_equal_to("success")
-            assert_that(events[1].payload["type"]).is_equal_to(
-                f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
+            assert_that(events[1].payload["type"]).is_equal_to("builtins.dict")
             assert_that(events[1].payload["response"]).is_equal_to(next_users.get("value"))
 
     def test_run_when_expression_is_valid_and_do_xcom_push_is_false(self):
@@ -71,15 +55,14 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
         )):
             users = load_json("resources", "users.json")
             users.pop("@odata.nextLink")
-            response = JsonParseNode(users).get_object_value(DeltaGetResponse)
-            delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(return_async(response))
-            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            mock_client({"users": users_request_builder})
+            request_adapter = mock_client()
+            response = mock({"status_code": 200}, spec=Response)
+            when(response).json().thenReturn(users)
+            mock_send_primitive_async(request_adapter, response)
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
-                expression="users.delta.get()",
+                url="users/delta",
                 do_xcom_push=False,
             )
 
@@ -89,8 +72,7 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             assert_that(events).is_length(1)
             assert_that(events[0]).is_type_of(TriggerEvent)
             assert_that(events[0].payload["status"]).is_equal_to("success")
-            assert_that(events[0].payload["type"]).is_equal_to(
-                f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
+            assert_that(events[0].payload["type"]).is_equal_to("builtins.dict")
             assert_that(events[0].payload["response"]).is_equal_to(users)
 
     def test_run_when_an_exception_occurs(self):
@@ -98,142 +80,19 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
                 "airflow.hooks.base.BaseHook.get_connection",
                 side_effect=get_airflow_connection,
         )):
-            delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenRaise(AirflowException("The conn_id `msgraph_api` isn't defined"))
-            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            mock_client({"users": users_request_builder})
+            request_adapter = mock_client()
+            response = mock({"status_code": 500}, spec=Response)
+            when(response).json().thenRaise(AirflowException())
+            mock_send_primitive_async(request_adapter, response)
             operator = MSGraphSDKAsyncOperator(
                 task_id="users_delta",
                 conn_id="msgraph_api",
-                expression="users.delta.get()",
+                url="users/delta",
                 do_xcom_push=False,
             )
 
             with self.assertRaises(AirflowException):
                 self.execute_operator(operator)
-
-    def test_run_when_valid_expression_and_trigger_dag_id(self):
-        trigger_dag_id = "triggered_dag_id"
-
-        dag_run = mock(spec=DagRun)
-        dag = mock({"default_args": [], "timetable": NullTimetable(), "subdags": []}, spec=DAG)
-        when(dag).create_dagrun(
-            run_id=ANY,
-            execution_date=ANY,
-            state=mockito.eq(DagRunState.QUEUED),
-            conf=ANY,
-            external_trigger=True,
-            dag_hash=mockito.eq(trigger_dag_id),
-            data_interval=ANY,
-        ).thenReturn(dag_run)
-
-        dag_bag = MagicMock()
-        dag_bag.dags = {trigger_dag_id}
-        dag_bag.dags_hash = {trigger_dag_id: trigger_dag_id}
-        dag_bag.get_dag.side_effect=lambda dag_id: dag
-
-        with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=get_airflow_connection), \
-            patch.object(DagBag, '__new__', return_value=dag_bag):
-            users = load_json("resources", "users.json")
-            next_users = load_json("resources", "next_users.json")
-            response = JsonParseNode(users).get_object_value(DeltaGetResponse)
-            next_response = JsonParseNode(next_users).get_object_value(DeltaGetResponse)
-            delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(return_async(response))
-            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter = mock_client({"users": users_request_builder}).request_adapter
-            when(request_adapter).send_async(
-                request_info=ANY,
-                parsable_factory=mockito.eq(DeltaGetResponse),
-                error_map=ANY,
-            ).thenReturn(return_async(next_response))
-            dag_model = mock(spec=DagModel)
-            mockito.patch(dag_model, "fileloc", __file__)
-            when(DagModel).get_current(trigger_dag_id).thenReturn(dag_model)
-            when(DagRun).find_duplicate(dag_id=mockito.eq(trigger_dag_id), execution_date=ANY, run_id=ANY).thenReturn(None)
-            operator = MSGraphSDKAsyncOperator(
-                task_id="users_delta",
-                conn_id="msgraph_api",
-                expression="users.delta.get()",
-                trigger_dag_id=trigger_dag_id,
-            )
-
-            results, events = self.execute_operator(operator)
-
-            assert_that(results).is_none()
-            assert_that(events).is_length(2)
-
-            assert_that(events[0]).is_type_of(TriggerEvent)
-            assert_that(events[0].payload["status"]).is_equal_to("success")
-            assert_that(events[0].payload["type"]).is_equal_to(f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
-            assert_that(events[0].payload["response"]).is_equal_to(users)
-            assert_that(events[1]).is_type_of(TriggerEvent)
-            assert_that(events[1].payload["status"]).is_equal_to("success")
-            assert_that(events[1].payload["type"]).is_equal_to(
-                f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
-            assert_that(events[1].payload["response"]).is_equal_to(next_users)
-
-    def test_run_when_valid_expression_with_trigger_dag_id_and_result_processor(self):
-        trigger_dag_id = "triggered_dag_id"
-
-        dag_run = mock(spec=DagRun)
-        dag = mock({"default_args": [], "timetable": NullTimetable(), "subdags": []}, spec=DAG)
-        when(dag).create_dagrun(
-            run_id=ANY,
-            execution_date=ANY,
-            state=mockito.eq(DagRunState.QUEUED),
-            conf=ANY,
-            external_trigger=True,
-            dag_hash=mockito.eq(trigger_dag_id),
-            data_interval=ANY,
-        ).thenReturn(dag_run)
-
-        dag_bag = MagicMock()
-        dag_bag.dags = {trigger_dag_id}
-        dag_bag.dags_hash = {trigger_dag_id: trigger_dag_id}
-        dag_bag.get_dag.side_effect=lambda dag_id: dag
-
-        with patch("airflow.hooks.base.BaseHook.get_connection",side_effect=get_airflow_connection), \
-            patch.object(DagBag, '__new__', return_value=dag_bag):
-            users = load_json("resources", "users.json")
-            next_users = load_json("resources", "next_users.json")
-            response = JsonParseNode(users).get_object_value(DeltaGetResponse)
-            next_response = JsonParseNode(next_users).get_object_value(DeltaGetResponse)
-            delta_request_builder = mock(spec=DeltaRequestBuilder)
-            when(delta_request_builder).get().thenReturn(return_async(response))
-            users_request_builder = mock({"delta": delta_request_builder}, spec=UsersRequestBuilder)
-            request_adapter = mock_client({"users": users_request_builder}).request_adapter
-            when(request_adapter).send_async(
-                request_info=ANY,
-                parsable_factory=mockito.eq(DeltaGetResponse),
-                error_map=ANY,
-            ).thenReturn(return_async(next_response))
-            dag_model = mock(spec=DagModel)
-            mockito.patch(dag_model, "fileloc", __file__)
-            when(DagModel).get_current(trigger_dag_id).thenReturn(dag_model)
-            when(DagRun).find_duplicate(dag_id=mockito.eq(trigger_dag_id), execution_date=ANY, run_id=ANY).thenReturn(None)
-            operator = MSGraphSDKAsyncOperator(
-                task_id="users_delta",
-                conn_id="msgraph_api",
-                expression="users.delta.get()",
-                trigger_dag_id=trigger_dag_id,
-                result_processor=lambda context, result: result.get("value"),
-            )
-
-            results, events = self.execute_operator(operator)
-
-            assert_that(results).is_none()
-            assert_that(events).is_length(2)
-
-            assert_that(events[0]).is_type_of(TriggerEvent)
-            assert_that(events[0].payload["status"]).is_equal_to("success")
-            assert_that(events[0].payload["type"]).is_equal_to(f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
-            assert_that(events[0].payload["response"]).is_equal_to(users.get("value"))
-            assert_that(events[1]).is_type_of(TriggerEvent)
-            assert_that(events[1].payload["status"]).is_equal_to("success")
-            assert_that(events[1].payload["type"]).is_equal_to(
-                f"{DeltaGetResponse.__module__}.{DeltaGetResponse.__name__}")
-            assert_that(events[1].payload["response"]).is_equal_to(next_users.get("value"))
 
     def test_run_when_url_which_returns_bytes(self):
         with (patch(
@@ -243,17 +102,14 @@ class MSGraphSDKOperatorTestCase(BaseTestCase):
             content = load_file("resources", "dummy.pdf", mode="rb", encoding=None)
             base64_encoded_content = b64encode(content).decode(locale.getpreferredencoding())
             drive_id = "82f9d24d-6891-4790-8b6d-f1b2a1d0ca22"
-            request_adapter = mock_client().request_adapter
-            when(request_adapter).send_primitive_async(
-                request_info=any(RequestInformation),
-                response_type=eq(bytes),
-                error_map=any(dict),
-            ).thenReturn(return_async(content))
+            request_adapter = mock_client()
+            response = mock({"status_code": 500, "content": content}, spec=Response)
+            mock_send_primitive_async(request_adapter, response, response_type="bytes")
             operator = MSGraphSDKAsyncOperator(
                 task_id="drive_item_content",
                 conn_id="msgraph_api",
-                response_type=bytes,
-                url=f"drives/{drive_id}/root/content",
+                response_type="bytes",
+                url=f"/drives/{drive_id}/root/content",
             )
 
             results, events = self.execute_operator(operator)

@@ -18,9 +18,6 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
-from contextlib import suppress
-from functools import cached_property
 from typing import (
     Dict,
     Optional,
@@ -30,61 +27,112 @@ from typing import (
     Union,
     Type,
     TYPE_CHECKING,
+    Callable,
 )
 
-from airflow.providers.microsoft.msgraph.hooks import (
-    DEFAULT_CONN_NAME,
-    CLIENT_TYPE,
-    ODATA_ERROR_TYPE,
+from airflow.providers.microsoft.msgraph.hooks import DEFAULT_CONN_NAME
+from airflow.providers.microsoft.msgraph.hooks.msgraph import KiotaRequestAdapterHook
+from airflow.providers.microsoft.msgraph.serialization.response_handler import (
+    CallableResponseHandler,
 )
-from airflow.providers.microsoft.msgraph.hooks.evaluator import ExpressionEvaluator
-from airflow.providers.microsoft.msgraph.hooks.msgraph import GraphServiceClientHook
 from airflow.providers.microsoft.msgraph.serialization.serializer import (
     ResponseSerializer,
 )
 from airflow.triggers.base import BaseTrigger, TriggerEvent
 from airflow.utils.module_loading import import_string
+from kiota_abstractions.api_error import APIError
 from kiota_abstractions.method import Method
 from kiota_abstractions.request_information import RequestInformation
-from kiota_abstractions.serialization import Parsable
+from kiota_http.middleware.options import ResponseHandlerOption
 from msgraph_core import APIVersion
 
 if TYPE_CHECKING:
     from io import BytesIO
     from kiota_abstractions.request_adapter import RequestAdapter
     from kiota_abstractions.request_information import QueryParams
+    from kiota_abstractions.response_handler import NativeResponseType
     from kiota_abstractions.serialization import ParsableFactory
     from kiota_http.httpx_request_adapter import ResponseType
 
 
-class MSGraphSDKBaseTrigger(BaseTrigger):
+class MSGraphSDKTrigger(BaseTrigger):
+    """
+    A Microsoft Graph API trigger which allows you to execute an async URL request using the msgraph_sdk client.
+
+    https://github.com/microsoftgraph/msgraph-sdk-python
+
+    :param url: The url being executed on the msgraph_sdk client (templated).
+    :param response_type: The response_type being returned by the msgraph_sdk client.
+    :param method: The HTTP method being used by the msgraph_sdk client (default is GET).
+    :param conn_id: The HTTP Connection ID to run the trigger against (templated).
+    :param timeout: The HTTP timeout being used by the msgraph_sdk client (default is None).
+        When no timeout is specified or set to None then no HTTP timeout is applied on each request.
+    :param proxies: A Dict defining the HTTP proxies to be used (default is None).
+    :param api_version: The API version of the msgraph_sdk client to be used (default is v1).
+        You can pass an enum named APIVersion which has 2 possible members v1 and beta,
+        or you can pass a string as "v1.0" or "beta".
+        This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
+    """
+
+    DEFAULT_HEADERS = {"Accept": "application/json;q=1"}
+    template_fields: Sequence[str] = (
+        "url",
+        "response_type",
+        "path_parameters",
+        "url_template",
+        "query_parameters",
+        "headers",
+        "content",
+        "conn_id",
+    )
+
     def __init__(
         self,
+        url: Optional[str] = None,
+        response_type: Optional[ResponseType] = None,
+        response_handler: Callable[
+            [NativeResponseType, Optional[Dict[str, Optional[ParsableFactory]]]], Any
+        ] = lambda response, error_map: response.json(),
+        path_parameters: Optional[Dict[str, Any]] = None,
+        url_template: Optional[str] = None,
+        method: str = "GET",
+        query_parameters: Optional[Dict[str, QueryParams]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        content: Optional[BytesIO] = None,
         conn_id: str = DEFAULT_CONN_NAME,
         timeout: Optional[float] = None,
         proxies: Optional[Dict] = None,
-        api_version: Optional[APIVersion] = None,
+        api_version: Union[APIVersion, str] = APIVersion.v1,
         serializer: Union[str, Type[ResponseSerializer]] = ResponseSerializer,
     ):
         super().__init__()
-        self.hook = GraphServiceClientHook(
+        self.hook = KiotaRequestAdapterHook(
             conn_id=conn_id,
             timeout=timeout,
             proxies=proxies,
             api_version=api_version,
         )
-        self.serializer: ResponseSerializer = self.resolve_serializer(serializer)
+        self.url = url
+        self.response_type = response_type
+        self.response_handler = response_handler
+        self.path_parameters = path_parameters
+        self.url_template = url_template
+        self.method = method
+        self.query_parameters = query_parameters
+        self.headers = headers
+        self.content = content
+        self.serializer: ResponseSerializer = self.resolve_type(
+            serializer, default=ResponseSerializer
+        )()
 
     @classmethod
-    def resolve_serializer(
-        cls, serializer: Union[str, Type[ResponseSerializer]]
-    ) -> ResponseSerializer:
-        if isinstance(serializer, str):
+    def resolve_type(cls, value: Union[str, Type], default) -> Type:
+        if isinstance(value, str):
             try:
-                serializer = import_string(serializer)
+                return import_string(value)
             except ImportError:
-                serializer = ResponseSerializer
-        return serializer()
+                return default
+        return value or default
 
     def serialize(self) -> tuple[str, dict[str, Any]]:
         """Serializes HttpTrigger arguments and classpath."""
@@ -97,10 +145,18 @@ class MSGraphSDKBaseTrigger(BaseTrigger):
                 "proxies": self.proxies,
                 "api_version": api_version,
                 "serializer": f"{self.serializer.__class__.__module__}.{self.serializer.__class__.__name__}",
+                "url": self.url,
+                "path_parameters": self.path_parameters,
+                "url_template": self.url_template,
+                "method": self.method,
+                "query_parameters": self.query_parameters,
+                "headers": self.headers,
+                "content": self.content,
+                "response_type": self.response_type,
             },
         )
 
-    def get_conn(self) -> CLIENT_TYPE:
+    def get_conn(self) -> RequestAdapter:
         return self.hook.get_conn()
 
     @property
@@ -118,14 +174,6 @@ class MSGraphSDKBaseTrigger(BaseTrigger):
     @property
     def api_version(self) -> APIVersion:
         return self.hook.api_version
-
-    @property
-    def request_adapter(self) -> RequestAdapter:
-        return self.get_conn().request_adapter
-
-    @abstractmethod
-    async def execute(self) -> Any:
-        raise NotImplementedError()
 
     async def run(self) -> AsyncIterator[TriggerEvent]:
         """Makes a series of asynchronous http calls via a MSGraphSDKHook."""
@@ -162,138 +210,6 @@ class MSGraphSDKBaseTrigger(BaseTrigger):
             self.log.exception("An error occurred: %s", e)
             yield TriggerEvent({"status": "failure", "message": str(e)})
 
-
-class MSGraphSDKEvaluateTrigger(MSGraphSDKBaseTrigger):
-    """
-    A Microsoft Graph API trigger which allows you to execute an expression on the msgraph_sdk client.
-
-    https://github.com/microsoftgraph/msgraph-sdk-python
-
-    :param expression: The expression being executed on the msgraph_sdk client (templated).
-    :param conn_id: The HTTP Connection ID to run the trigger against (templated).
-    :param timeout: The HTTP timeout being used by the msgraph_sdk client (default is None).
-        When no timeout is specified or set to None then no HTTP timeout is applied on each request.
-    :param proxies: A Dict defining the HTTP proxies to be used (default is None).
-    :param api_version: The API version of the msgraph_sdk client to be used (default is v1).
-        You can pass an enum named APIVersion which has 2 possible members v1 and beta,
-        or you can pass a string as "v1.0" or "beta".
-        This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
-    """
-
-    template_fields: Sequence[str] = ("expression", "conn_id")
-
-    def __init__(
-        self,
-        expression: Optional[str] = None,
-        conn_id: str = DEFAULT_CONN_NAME,
-        timeout: Optional[float] = None,
-        proxies: Optional[Dict] = None,
-        api_version: Union[APIVersion, str] = APIVersion.v1,
-        serializer: Union[str, Type[ResponseSerializer]] = ResponseSerializer,
-    ):
-        super().__init__(
-            conn_id=conn_id,
-            timeout=timeout,
-            proxies=proxies,
-            api_version=api_version,
-            serializer=serializer,
-        )
-        self.expression = expression
-
-    def serialize(self) -> tuple[str, dict[str, Any]]:
-        """Serializes MSGraphSDKEvaluateTrigger arguments and classpath."""
-        name, fields = super().serialize()
-        fields = {**{"expression": self.expression}, **fields}
-        return name, fields
-
-    def evaluator(self) -> ExpressionEvaluator:
-        return ExpressionEvaluator(self.get_conn())
-
-    async def execute(self) -> AsyncIterator[TriggerEvent]:
-        return await self.evaluator().evaluate(self.expression)
-
-
-class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
-    """
-    A Microsoft Graph API trigger which allows you to execute an async URL request using the msgraph_sdk client.
-
-    https://github.com/microsoftgraph/msgraph-sdk-python
-
-    :param url: The url being executed on the msgraph_sdk client (templated).
-    :param response_type: The response_type being returned by the msgraph_sdk client.
-    :param method: The HTTP method being used by the msgraph_sdk client (default is GET).
-    :param conn_id: The HTTP Connection ID to run the trigger against (templated).
-    :param timeout: The HTTP timeout being used by the msgraph_sdk client (default is None).
-        When no timeout is specified or set to None then no HTTP timeout is applied on each request.
-    :param proxies: A Dict defining the HTTP proxies to be used (default is None).
-    :param api_version: The API version of the msgraph_sdk client to be used (default is v1).
-        You can pass an enum named APIVersion which has 2 possible members v1 and beta,
-        or you can pass a string as "v1.0" or "beta".
-        This will determine which msgraph_sdk client is going to be used as each version has a dedicated client.
-    """
-
-    DEFAULT_HEADERS = {"Accept": "application/json;q=1"}
-    template_fields: Sequence[str] = (
-        "url",
-        "response_type",
-        "path_parameters",
-        "url_template",
-        "query_parameters",
-        "headers",
-        "content",
-        "conn_id",
-    )
-
-    def __init__(
-        self,
-        url: Optional[str] = None,
-        response_type: Optional[ResponseType] = None,
-        path_parameters: Optional[Dict[str, Any]] = None,
-        url_template: Optional[str] = None,
-        method: str = "GET",
-        query_parameters: Optional[Dict[str, QueryParams]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        content: Optional[BytesIO] = None,
-        conn_id: str = DEFAULT_CONN_NAME,
-        timeout: Optional[float] = None,
-        proxies: Optional[Dict] = None,
-        api_version: Union[APIVersion, str] = APIVersion.v1,
-        serializer: Union[str, Type[ResponseSerializer]] = ResponseSerializer,
-    ):
-        super().__init__(
-            conn_id=conn_id,
-            timeout=timeout,
-            proxies=proxies,
-            api_version=api_version,
-            serializer=serializer,
-        )
-        self.url = url
-        self.response_type = response_type
-        self.path_parameters = path_parameters
-        self.url_template = url_template
-        self.method = method
-        self.query_parameters = query_parameters
-        self.headers = headers
-        self.content = content
-
-    def serialize(self) -> tuple[str, dict[str, Any]]:
-        """Serializes MSGraphSDKAsyncSendTrigger arguments and classpath."""
-        name, fields = super().serialize()
-        fields = {
-            **{
-                "url": self.url,
-                "path_parameters": self.path_parameters,
-                "url_template": self.url_template,
-                "method": self.method,
-                "query_parameters": self.query_parameters,
-                "headers": self.headers,
-                "content": self.content,
-                "response_type": self.response_type,
-            },
-            **fields,
-        }
-        return name, fields
-
     def normalize_url(self) -> str:
         if self.url.startswith("/"):
             return self.url.replace("/", "", 1)
@@ -308,6 +224,12 @@ class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
         request_information.path_parameters = self.path_parameters or {}
         request_information.http_method = Method(self.method.strip().upper())
         request_information.query_parameters = self.query_parameters or {}
+        if not self.response_type:
+            request_information.request_options[
+                ResponseHandlerOption.get_key()
+            ] = ResponseHandlerOption(
+                response_handler=CallableResponseHandler(self.response_handler)
+            )
         request_information.content = self.content
         headers = (
             {**self.DEFAULT_HEADERS, **self.headers}
@@ -320,36 +242,14 @@ class MSGraphSDKSendAsyncTrigger(MSGraphSDKBaseTrigger):
             )
         return request_information
 
-    @cached_property
-    def data_error_type(self) -> ParsableFactory:
-        return ODATA_ERROR_TYPE[self.api_version]
-
     def error_mapping(self) -> Dict[str, Optional[ParsableFactory]]:
         return {
-            "4XX": self.data_error_type,
-            "5XX": self.data_error_type,
+            "4XX": APIError,
+            "5XX": APIError,
         }
 
-    def get_parsable_factory(self) -> Optional[Union[ParsableFactory, str]]:
-        if self.response_type:
-            with suppress(ImportError, TypeError):
-                parsable_factory = import_string(self.response_type)
-                if issubclass(parsable_factory, Parsable):
-                    return parsable_factory
-        return None
-
     async def execute(self) -> AsyncIterator[TriggerEvent]:
-        parsable_factory = self.get_parsable_factory()
-
-        self.log.debug("parsable factory is %s", parsable_factory)
-
-        if parsable_factory:
-            return await self.request_adapter.send_async(
-                request_info=self.request_information(),
-                parsable_factory=parsable_factory,
-                error_map=self.error_mapping(),
-            )
-        return await self.request_adapter.send_primitive_async(
+        return await self.get_conn().send_primitive_async(
             request_info=self.request_information(),
             response_type=self.response_type,
             error_map=self.error_mapping(),

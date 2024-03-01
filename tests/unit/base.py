@@ -4,7 +4,7 @@ from unittest import TestCase
 
 from airflow.exceptions import TaskDeferred
 from airflow.models import Operator
-from airflow.providers.microsoft.msgraph.hooks.msgraph import GraphServiceClientHook
+from airflow.providers.microsoft.msgraph.hooks.msgraph import KiotaRequestAdapterHook
 from airflow.triggers.base import BaseTrigger, TriggerEvent
 from airflow.utils.state import TaskInstanceState
 
@@ -17,7 +17,7 @@ class BaseTestCase(TestCase):
         cls._loop = asyncio.get_event_loop()
 
     def tearDown(self):
-        GraphServiceClientHook.cached_clients.clear()
+        KiotaRequestAdapterHook.cached_request_adapters.clear()
         MockedTaskInstance.values.clear()
 
     @staticmethod

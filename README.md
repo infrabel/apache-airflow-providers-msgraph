@@ -37,7 +37,7 @@ from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyn
 users_task = MSGraphSDKAsyncOperator(
     task_id="users_delta",
     conn_id="msgraph_api",
-    expression="users.get()",
+    url="users",
 )
 ```
 
@@ -49,7 +49,7 @@ from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyn
 users_delta_task = MSGraphSDKAsyncOperator(
     task_id="users_delta",
     conn_id="msgraph_api",
-    expression="users.delta.get()",
+    url="users/delta",
 )
 ```
 
@@ -61,101 +61,18 @@ from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyn
 site_task = MSGraphSDKAsyncOperator(
     task_id="wgive_site",
     conn_id="msgraph_api",
-    expression="sites.by_site_id('850v1v.sharepoint.com:/sites/wgive').get()",
+    url="sites/850v1v.sharepoint.com:/sites/wgive",
+    result_processor=lambda context, response: response["id"],
 )
 
 site_pages_task = MSGraphSDKAsyncOperator(
     task_id="news_site_pages",
     conn_id="msgraph_api",
     expression=(
-        "sites.by_site_id('%s').pages.get()"
-        % "{{ ti.xcom_pull(task_ids='wgive_site')['id'] }}"
+        "sites/%s/pages"
+        % "{{ site_task.output }}"
     ),
 )
 
 site_task >> site_pages_task
-```
-
-Getting users delta paged results and passing those to another DAG which processes them:
-
-```python
-
-
-from airflow import DAG
-from airflow.decorators import task
-from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
-from pendulum import datetime
-
-with DAG(
-        "process_users_delta",
-        start_date=datetime(2022, 12, 20),
-        default_args={
-            "owner": "dabla",
-        },
-        schedule_interval=None,
-        catchup=False,
-) as dag:
-    @task(dag=dag)
-    def get_response(**context):
-        return context.get("params", {}).get("value", [])
-
-    get_response()
-
-with DAG(
-        "test_msgraph_sdk",
-        start_date=datetime(2022, 12, 20),
-        default_args={
-            "owner": "dabla",
-        },
-        schedule="@daily",
-        catchup=False,
-) as dag:
-    users_delta_task = MSGraphSDKAsyncOperator(
-        task_id="users_delta",
-        conn_id="msgraph_api",
-        expression="users.delta.get()",
-        trigger_dag_id="process_users_delta",
-    )
-```
-
-Getting site list items using a dict as dataclass parameter for get function:
-
-```python
-import logging
-
-from airflow import DAG
-from airflow.decorators import task
-from airflow.providers.microsoft.msgraph.operators.msgraph import MSGraphSDKAsyncOperator
-from pendulum import datetime
-
-
-with DAG(
-    "test_msgraph_sdk",
-    start_date=datetime(2022, 12, 20),
-    default_args={
-        "owner": "dabla",
-    },
-    schedule="@daily",
-    catchup=False,
-) as dag:
-    site_task = MSGraphSDKAsyncOperator(
-        task_id="wget_site",
-        conn_id="msgraph_api",
-        expression="sites.by_site_id('850v1v.sharepoint.com:/sites/wget').get()",
-    )
-
-    news_site_list_items_task = MSGraphSDKAsyncOperator(
-        task_id="news_site_list_items",
-        conn_id="msgraph_sharepoint_acc",
-        expression=(
-            "sites.by_site_id('%s').lists.by_list_id('82f9d24d-6891-4790-8b6d-f1b2a1d0ca22').items.get({'query_parameters': {'expand': ['fields']}})"
-            % "{{ ti.xcom_pull(task_ids='news_site')['id'] }}"
-        ),
-    )
-
-    @task(dag=dag)
-    def show(response):
-        logging.info("response: %s", response)
-    
-    site_task >> news_site_list_items_task >> show(news_site_list_items_task.output)
 ```

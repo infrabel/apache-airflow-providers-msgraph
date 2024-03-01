@@ -18,12 +18,9 @@ packages = [{include = "airflow/providers/microsoft/msgraph", from = "."}]
 [tool.poetry.dependencies]
 python = ">=3.9 <=3.12"
 aiostream = "^0.5.2"
-dacite = "^1.8.1"
-simpleeval = "^0.9.13"
-regex = "^2023.10.3"
 apache-airflow = ">2.7"
-msgraph-sdk = "^1.1.0"
-msgraph-beta-sdk = "^1.1.0"
+azure-identity = "^1.15.0"
+msgraph-core = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 black = "23.3.0"
