@@ -6,7 +6,6 @@ from unittest.mock import patch
 from airflow import AirflowException
 from airflow.providers.microsoft.msgraph.triggers.msgraph import MSGraphSDKTrigger
 from airflow.triggers.base import TriggerEvent
-from assertpy import assert_that
 from kiota_http.httpx_request_adapter import HttpxRequestAdapter
 
 from tests.unit.base import Base
@@ -43,9 +42,9 @@ class TestMSGraphSDKTriggerTestCase(Base):
 
             assert len(actual) == 1
             assert isinstance(actual[0], TriggerEvent)
-            assert_that(actual[0].payload["status"]).is_equal_to("success")
-            assert_that(actual[0].payload["type"]).is_none()
-            assert_that(actual[0].payload["response"]).is_none()
+            assert actual[0].payload["status"] == "success"
+            assert actual[0].payload["type"] is None
+            assert actual[0].payload["response"] is None
 
     def test_run_when_response_cannot_be_converted_to_json(self):
         with (
@@ -89,8 +88,8 @@ class TestMSGraphSDKTriggerTestCase(Base):
             actual = trigger.serialize()
 
             assert isinstance(actual, tuple)
-            assert_that(actual[0]).is_equal_to("airflow.providers.microsoft.msgraph.triggers.msgraph.MSGraphSDKTrigger")
-            assert_that(actual[1]).is_equal_to({
+            assert actual[0] == "airflow.providers.microsoft.msgraph.triggers.msgraph.MSGraphSDKTrigger"
+            assert actual[1] == {
                 "url": "https://graph.microsoft.com/v1.0/me/drive/items",
                 "path_parameters": None,
                 "url_template": None,
@@ -104,4 +103,4 @@ class TestMSGraphSDKTriggerTestCase(Base):
                 "proxies": None,
                 "api_version": "v1.0",
                 "serializer": "airflow.providers.microsoft.msgraph.serialization.serializer.ResponseSerializer"
-            })
+            }
