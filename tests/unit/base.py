@@ -13,11 +13,7 @@ from tests.unit.conftest import MockedTaskInstance
 
 
 class Base:
-    _loop = None
-
-    def setup_method(self):
-        if not self._loop:
-            self._loop = asyncio.get_event_loop()
+    _loop = asyncio.get_event_loop()
 
     def teardown_method(self, method):
         KiotaRequestAdapterHook.cached_request_adapters.clear()
