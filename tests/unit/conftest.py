@@ -2,22 +2,14 @@ import json
 from datetime import datetime
 from os.path import join, dirname
 from typing import Iterable, Dict, Any, Optional, Union
+from unittest.mock import MagicMock
 
-import httpx
 from airflow.configuration import AirflowConfigParser
 from airflow.models import TaskInstance
 from airflow.utils.session import NEW_SESSION
 from airflow.utils.xcom import XCOM_RETURN_KEY
-from azure import identity
-from httpx import Timeout, Response
-from kiota_abstractions.authentication import AuthenticationProvider
-from kiota_abstractions.request_information import RequestInformation
-from kiota_authentication_azure import azure_identity_authentication_provider
-from kiota_http import httpx_request_adapter
-from kiota_http.httpx_request_adapter import RESPONSE_HANDLER_EVENT_INVOKED_KEY, HttpxRequestAdapter
-from mockito import any, mock, when, eq, ANY
-from msgraph_core import GraphClientFactory, APIVersion
-from opentelemetry.sdk.trace import Span
+from httpx import Response
+from msgraph_core import APIVersion
 from sqlalchemy.orm.session import Session
 
 VERSION = "1.0.2"
@@ -34,73 +26,22 @@ def load_file(*locations: Iterable[str], mode="r", encoding="utf-8"):
         return file.read()
 
 
-def mock_httpx_client() -> httpx.AsyncClient:
-    client = mock(spec=httpx.AsyncClient)
-    when(httpx).AsyncClient(
-        proxies={},
-        timeout=Timeout(timeout=None),
-        verify=True,
-        trust_env=False,
-    ).thenReturn(client)
-    httpx_client = mock(spec=httpx.AsyncClient)
-    when(GraphClientFactory).create_with_default_middleware(
-        api_version=any(APIVersion),
-        client=eq(client),
-        host="https://graph.microsoft.com",
-    ).thenReturn(httpx_client)
-    return httpx_client
+def mock_json_response(status_code, *contents) -> Response:
+    response = MagicMock(spec=Response)
+    response.status_code = status_code
+    if contents:
+        contents = list(contents)
+        response.json.side_effect = lambda: contents.pop(0)
+    else:
+        response.json.return_value = None
+    return response
 
 
-def mock_auth_provider() -> AuthenticationProvider:
-    credentials = mock(spec=identity.ClientSecretCredential)
-    when(identity).ClientSecretCredential(
-        tenant_id="tenant-id",
-        client_id="client_id",
-        client_secret="client_secret",
-        proxies={},
-    ).thenReturn(credentials)
-    auth_provider = mock(spec=azure_identity_authentication_provider.AzureIdentityAuthenticationProvider)
-    when(azure_identity_authentication_provider).AzureIdentityAuthenticationProvider(
-        credentials=credentials,
-        scopes=["https://graph.microsoft.com/.default"],
-    ).thenReturn(auth_provider)
-    return auth_provider
-
-
-def mock_request_adapter(auth_provider: AuthenticationProvider, httpx_client: httpx.AsyncClient, base_url: str = "https://graph.microsoft.com/v1.0") -> HttpxRequestAdapter:
-    request_adapter = mock({"base_url": base_url}, spec=HttpxRequestAdapter)
-    when(httpx_request_adapter).HttpxRequestAdapter(authentication_provider=auth_provider, http_client=httpx_client, base_url=base_url).thenReturn(request_adapter)
-    return request_adapter
-
-
-def mock_client() -> HttpxRequestAdapter:
-    httpx_client = mock_httpx_client()
-    auth_provider = mock_auth_provider()
-    request_adapter = mock_request_adapter(auth_provider=auth_provider, httpx_client=httpx_client)
-    return request_adapter
-
-
-def mock_send_primitive_async(request_adapter: HttpxRequestAdapter, *responses: Response, response_type: str = None):
-    when(request_adapter).send_primitive_async(
-        request_info=any(RequestInformation),
-        response_type=eq(response_type),
-        error_map=any(dict),
-    ).thenCallOriginalImplementation()
-    span = mock(spec=Span)
-    when(span).end().thenReturn(None)
-    when(span).add_event(RESPONSE_HANDLER_EVENT_INVOKED_KEY).thenReturn(None)
-    when(request_adapter).start_tracing_span(any(RequestInformation), eq("send_primitive_async")).thenReturn(span)
-    when(request_adapter).get_response_handler(any(RequestInformation)).thenCallOriginalImplementation()
-    return_values = tuple(map(return_async, responses))
-    when(request_adapter).get_http_response_message(any(RequestInformation), ANY).thenReturn(*return_values)
-    for response in responses:
-        when(request_adapter).throw_failed_responses(eq(response), any(dict), eq(span), eq(span)).thenReturn(
-            return_async(None))
-        when(request_adapter)._should_return_none(response).thenCallOriginalImplementation()
-
-
-async def return_async(value):
-    return value
+def mock_response(status_code, content: Any = None) -> Response:
+    response = MagicMock(spec=Response)
+    response.status_code = status_code
+    response.content = content
+    return response
 
 
 def get_airflow_connection(

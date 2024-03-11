@@ -1,7 +1,8 @@
 import asyncio
+from copy import deepcopy
 from typing import List, Tuple, Any
-from unittest import TestCase
 
+import pytest
 from airflow.exceptions import TaskDeferred
 from airflow.models import Operator
 from airflow.providers.microsoft.msgraph.hooks.msgraph import KiotaRequestAdapterHook
@@ -11,12 +12,14 @@ from airflow.utils.state import TaskInstanceState
 from tests.unit.conftest import MockedTaskInstance
 
 
-class BaseTestCase(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls._loop = asyncio.get_event_loop()
+class Base:
+    _loop = None
 
-    def tearDown(self):
+    def setup_method(self):
+        if not self._loop:
+            self._loop = asyncio.get_event_loop()
+
+    def teardown_method(self, method):
         KiotaRequestAdapterHook.cached_request_adapters.clear()
         MockedTaskInstance.values.clear()
 
@@ -33,22 +36,24 @@ class BaseTestCase(TestCase):
         result = None
         triggered_events = []
 
-        with self.assertRaises(TaskDeferred) as deferred:
+        with pytest.raises(TaskDeferred) as deferred:
             operator.execute(context=context)
 
-        while deferred.exception:
-            events = self._loop.run_until_complete(self.run_tigger(deferred.exception.trigger))
+        task = deferred.value
+
+        while task:
+            events = self._loop.run_until_complete(self.run_tigger(deferred.value.trigger))
 
             if not events:
                 break
 
-            triggered_events.extend(events)
+            triggered_events.extend(deepcopy(events))
 
             try:
-                method = getattr(operator, deferred.exception.method_name)
+                method = getattr(operator, deferred.value.method_name)
                 result = method(context=context, event=next(iter(events)).payload)
-                deferred.exception = None
+                task = None
             except TaskDeferred as exception:
-                deferred.exception = exception
+                task = exception
 
         return result, triggered_events
